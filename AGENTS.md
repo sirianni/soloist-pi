@@ -58,8 +58,10 @@ Follow the Python implementation plan supplied for this repository:
 
 ## Packaging and deployment boundaries
 
-- The package should install with `uv tool install` into its own managed
-  virtual environment; do not depend on a system-wide Python package install.
+- Production installation is from a built wheel into the dedicated
+  `/opt/soloist-pi/venv` virtual environment. Use `uv` for provisioning and
+  upgrades, but have systemd execute the installed entry point directly; do not
+  depend on a system-wide Python package install.
 - Keep the Python package platform-independent and standard-library-only; the
   managed Soloist binary is specifically Linux arm64 for the initial target.
 - Do not add Ansible roles/playbooks or secret deployment configuration unless

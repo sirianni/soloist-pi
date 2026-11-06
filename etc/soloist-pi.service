@@ -1,0 +1,20 @@
+[Unit]
+Description=Spotify Soloist supervisor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=soloist-pi
+Group=soloist-pi
+WorkingDirectory=/var/lib/soloist-pi
+ExecStart=/opt/soloist-pi/venv/bin/soloist-pi run
+Restart=on-failure
+RestartSec=5s
+
+# Let the supervisor forward SIGTERM to Soloist before systemd kills the cgroup.
+KillMode=mixed
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
