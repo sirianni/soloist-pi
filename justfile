@@ -7,19 +7,19 @@ sync:
 
 # Run Ruff lint checks.
 lint:
-    uv run ruff check .
+    uv run ruff check
 
 # Format the project with Ruff.
 format:
-    uv run ruff format .
+    uv run ruff format
 
 # Check formatting without modifying files.
 format-check:
-    uv run ruff format --check .
+    uv run ruff format --check
 
-# Run the unit tests.
+# Run the test suite with pytest.
 test:
-    uv run python -m unittest discover -s tests
+    uv run pytest
 
 # Run lint, formatting, and tests.
 check: lint format-check test
@@ -27,10 +27,6 @@ check: lint format-check test
 # Build source and wheel distributions.
 build:
     uv build
-
-# Install or replace the user-local isolated uv tool environment.
-install:
-    uv tool install --force .
 
 # Remove generated project artifacts.
 clean:

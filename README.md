@@ -2,8 +2,8 @@
 
 A small Python supervisor for running Spotify Soloist on a Raspberry Pi. The
 runtime is intended to use only the Python standard library; `uv` manages the
-development environment and isolated installation, and `ruff` handles linting
-and formatting.
+development environment and isolated installation, `pytest` runs the test suite,
+and `ruff` handles linting and formatting.
 
 > The supervisor behavior is not implemented yet. This repository currently
 > contains project and packaging scaffolding only.
@@ -15,7 +15,7 @@ Python 3.13 or newer. The `justfile` provides the common project targets:
 
 ```sh
 just sync          # create/update the development environment
-just check         # lint, format-check, and test
+just check         # lint, format-check, and pytest
 just format        # apply Ruff formatting
 just build         # build source and wheel distributions
 just install       # install as an isolated uv tool
