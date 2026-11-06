@@ -1,0 +1,19 @@
+[project]
+name = "soloist-pi"
+version = "0.1.0"
+description = "Python supervisor for Spotify Soloist on Raspberry Pi"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+soloist-pi = "soloist_pi.cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
