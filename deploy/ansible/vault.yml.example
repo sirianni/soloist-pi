@@ -1,0 +1,5 @@
+# Copy this file to vault.yml, set the value using ansible-vault, and never
+# commit the decrypted file. Example:
+#   ansible-vault create deploy/ansible/group_vars/soloist_pi/vault.yml
+# Define this variable inside the encrypted file:
+# soloist_pi_api_key: "your-Spotify-Soloist-API-key"

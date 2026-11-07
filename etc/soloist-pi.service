@@ -8,11 +8,13 @@ Type=simple
 User=soloist-pi
 Group=soloist-pi
 WorkingDirectory=/var/lib/soloist-pi
-ExecStart=/opt/soloist-pi/venv/bin/soloist-pi run
+ExecStart=/opt/soloist-pi/venv/bin/soloist-pi run --config /var/lib/soloist-pi/config/config.toml --placeholder
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=5s
 
-# Let the supervisor forward SIGTERM to Soloist before systemd kills the cgroup.
+# Let the supervisor forward SIGTERM to its child before systemd kills the cgroup.
 KillMode=mixed
 TimeoutStopSec=30s
 

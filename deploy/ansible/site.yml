@@ -1,0 +1,173 @@
+---
+- name: Deploy the soloist-pi supervisor
+  hosts: soloist_pi
+  become: true
+  gather_facts: true
+
+  vars:
+    service_user: soloist-pi
+    service_group: soloist-pi
+    service_home: /var/lib/soloist-pi
+    config_dir: /var/lib/soloist-pi/config
+    state_dir: /var/lib/soloist-pi/state
+    managed_dir: /var/lib/soloist-pi/managed
+    cache_dir: /var/cache/soloist-pi
+    app_root: /opt/soloist-pi
+    venv_dir: /opt/soloist-pi/venv
+    config_path: /var/lib/soloist-pi/config/config.toml
+    api_key_path: /var/lib/soloist-pi/config/api-key
+
+  tasks:
+    - name: Assert the supported Debian 13 arm64 target and Python runtime
+      ansible.builtin.assert:
+        that:
+          - ansible_facts["distribution"] == "Debian"
+          - ansible_facts["distribution_major_version"] == "13"
+          - ansible_facts["architecture"] in ["aarch64", "arm64"]
+          - ansible_facts["python_version"] is version("3.13", ">=")
+        fail_msg: "soloist-pi deployment requires Debian 13 arm64 and Python 3.13+"
+
+    - name: Require wheel and Vault-provided API key inputs
+      ansible.builtin.assert:
+        that:
+          - wheel_path is defined
+          - (wheel_path | default("")) is match(".*\\.whl$")
+          - soloist_pi_api_key is defined
+          - soloist_pi_api_key | default("") | string | length > 0
+        fail_msg: >-
+          Provide wheel_path and define soloist_pi_api_key in an Ansible Vault
+          group_vars file.
+      no_log: true
+
+    - name: Verify target Python provides venv and ensurepip
+      ansible.builtin.command:
+        argv:
+          - "{{ python_executable }}"
+          - -c
+          - import venv, ensurepip
+      changed_when: false
+
+    - name: Create the service group
+      ansible.builtin.group:
+        name: "{{ service_group }}"
+        system: true
+
+    - name: Create the unprivileged service account
+      ansible.builtin.user:
+        name: "{{ service_user }}"
+        group: "{{ service_group }}"
+        system: true
+        home: "{{ service_home }}"
+        create_home: true
+        shell: /usr/sbin/nologin
+
+    - name: Create root-owned application directory
+      ansible.builtin.file:
+        path: "{{ app_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create private service configuration and state directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ service_user }}"
+        group: "{{ service_group }}"
+        mode: "0700"
+      loop:
+        - "{{ config_dir }}"
+        - "{{ state_dir }}"
+        - "{{ managed_dir }}"
+
+    - name: Create the Soloist data directory without managing its contents
+      ansible.builtin.file:
+        path: "{{ soloist_pi_data_dir }}"
+        state: directory
+        owner: "{{ service_user }}"
+        group: "{{ service_group }}"
+        mode: "0700"
+
+    - name: Create cache directory without managing its contents
+      ansible.builtin.file:
+        path: "{{ cache_dir }}"
+        state: directory
+        owner: "{{ service_user }}"
+        group: "{{ service_group }}"
+        mode: "0750"
+
+    - name: Create a root-owned Python virtual environment
+      ansible.builtin.command:
+        argv:
+          - "{{ python_executable }}"
+          - -m
+          - venv
+          - "{{ venv_dir }}"
+        creates: "{{ venv_dir }}/bin/python"
+      register: python_venv
+
+    - name: Stage the exact wheel artifact from the controller
+      ansible.builtin.copy:
+        src: "{{ wheel_path }}"
+        dest: "/tmp/{{ wheel_path | basename }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: wheel_artifact
+
+    - name: Install the wheel into the dedicated virtual environment
+      ansible.builtin.command:
+        argv:
+          - "{{ venv_dir }}/bin/python"
+          - -m
+          - pip
+          - install
+          - --no-deps
+          - --force-reinstall
+          - "/tmp/{{ wheel_path | basename }}"
+      when: wheel_artifact.changed or python_venv.changed
+      notify: Restart soloist-pi
+
+    - name: Install private supervisor configuration
+      ansible.builtin.template:
+        src: soloist-pi.toml.j2
+        dest: "{{ config_path }}"
+        owner: "{{ service_user }}"
+        group: "{{ service_group }}"
+        mode: "0600"
+      notify: Restart soloist-pi
+
+    - name: Install API key without exposing it in task output or diffs
+      ansible.builtin.copy:
+        content: "{{ soloist_pi_api_key | string }}\n"
+        dest: "{{ api_key_path }}"
+        owner: "{{ service_user }}"
+        group: "{{ service_group }}"
+        mode: "0600"
+      no_log: true
+      diff: false
+      notify: Restart soloist-pi
+
+    - name: Install the systemd unit
+      ansible.builtin.template:
+        src: soloist-pi.service.j2
+        dest: /etc/systemd/system/soloist-pi.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart soloist-pi
+
+    - name: Enable and start the service
+      ansible.builtin.systemd_service:
+        name: soloist-pi.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: Restart soloist-pi
+      ansible.builtin.systemd_service:
+        name: soloist-pi.service
+        state: restarted
+        daemon_reload: true

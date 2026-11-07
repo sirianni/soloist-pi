@@ -1,0 +1,7 @@
+[soloist_pi]
+# Replace with the Pi's address; use a real inventory outside version control
+# if your hostnames or connection settings are private.
+pi ansible_host=192.0.2.10 ansible_user=admin
+
+[soloist_pi:vars]
+ansible_python_interpreter=/usr/bin/python3.13
