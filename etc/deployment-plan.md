@@ -1,127 +1,96 @@
-# Raspberry Pi deployment and Soloist configuration plan
+# Raspberry Pi deployment and Soloist configuration
 
-## Status and scope
+## Current status
 
-This is a deployment/configuration plan, not an Ansible implementation. It
-keeps the Python package and runtime standard-library-only while making
-configuration and installation repeatable on the Raspberry Pi.
+The supervisor TOML loader, private API-key file handling, placeholder process
+supervision, systemd unit, and Ansible wheel deployment are implemented. The
+Ansible deployment has been exercised on Debian 13 arm64 with the placeholder
+service and re-applied idempotently. See the [deployment runbook](../deploy/ansible/README.md)
+and the [project README](../README.md).
 
-The plan assumes a Debian 13 arm64 Pi. Production installs a built
-`soloist-pi` wheel into `/opt/soloist-pi/venv`; systemd runs the installed
-`soloist-pi` entry point directly. `uv` is used on the development/control host
-for build and package workflows, not on the Pi. Target-side provisioning uses
-Python's `venv` module and the environment's `pip`. See
-[`installation.md`](installation.md) for the installation direction.
+The Pi uses Python 3.13's built-in `venv` and the environment's `pip` to install
+the wheel. `uv` is used on the development/control host for build and package
+workflows; it is not a Pi prerequisite. systemd executes the installed
+`soloist-pi` entry point directly.
 
-## Configuration model
+The current unit explicitly runs `--placeholder`, which writes a heartbeat to
+stdout every 30 seconds. Replace the temporary API-key value through the Vault
+workflow before deploying a real Soloist backend. The placeholder does not use
+the key.
 
-Spotify's documented Soloist interface is startup command-line options, not a
-general-purpose config file. The key and device name are required on every
-start. Linux environment variables can override Soloist's data/cache directory
-locations, but other documented settings are passed as options. See Spotify's
-[command-line reference](https://developer.spotify.com/documentation/soloist/reference/command-line)
-and [authentication guide](https://developer.spotify.com/documentation/soloist/concepts/authentication).
+## Configuration and paths
 
-`soloist-pi` should provide the managed configuration surface: read a
-supervisor-owned TOML file, validate it, read the API key from a separate
-private file, and translate the settings to Soloist arguments. Use Python's
-standard-library `tomllib`; do not add a runtime dependency. The systemd unit
-must not contain configuration values or secrets beyond the config-file path.
+Spotify Soloist is configured through startup options, not a general-purpose
+config file. `soloist-pi` provides the service-owned TOML layer, validates it,
+reads the API key from a separate private file, and builds Soloist arguments.
+Use Python's standard-library `tomllib`; do not add a runtime dependency.
 
-Proposed settings:
+Required TOML settings:
 
-- `device_name` (required): Spotify Connect name shown in Spotify clients.
-- `api_key_file` (required): path to a private file containing the Spotify
-  Soloist API key. Do not put the key itself in TOML, command-line arguments to
-  `soloist-pi`, the systemd unit, Ansible output, or logs.
-- `data_dir` (required): stable Soloist data directory for its Connect session
-  and device state. Do not replace or clean it during ordinary deployment.
-- `cache_dir` and optional `cache_size_mb`.
-- Optional `pipewire_device` and `initial_volume`.
-- Optional WebSocket address for local integrations; disabled by default and,
-  if enabled, bind to loopback unless a documented use case requires otherwise.
+- `device_name`: Spotify Connect name.
+- `api_key_file`: absolute path to a private file containing only the API key.
+- `data_dir`: persistent Soloist device/session state.
+- `cache_dir`: volatile playback cache.
 
-Do not include one-shot pairing or single-track operation flags in the normal
-service configuration. Pair the device interactively once using the Spotify
-app on the same network; Soloist then persists the Connect session in its data
-directory. Ansible must preserve that data across application upgrades and
-configuration changes.
+Optional settings are `cache_size_mb`, `pipewire_device`, `initial_volume`, and
+`websocket_address`. WebSocket listeners are loopback-only. Do not put one-shot
+pairing or single-track flags in normal service configuration. See
+[`soloist-pi.toml.example`](soloist-pi.toml.example).
 
-The supervisor will still pass the API key to Soloist as a process argument,
-because that is Soloist's documented interface. Keep the key out of logs and
-service-unit contents, restrict its file to mode `0600`, and document that a
-same-user process may be able to inspect process arguments.
-
-## Target layout and ownership
-
-Use separate service-owned locations for configuration, persistent state,
-cache, and the managed Soloist executable. Proposed paths (finalize these when
-implementing the config loader):
-
-| Purpose | Proposed location | Ownership / mode |
+| Purpose | Path | Ownership / mode |
 | --- | --- | --- |
 | Config and API key | `/var/lib/soloist-pi/config/` | service account, directory `0700`, files `0600` |
-| Soloist data/session and supervisor update metadata | `/var/lib/soloist-pi/state/` | service account; private directory |
+| Persistent state and update metadata | `/var/lib/soloist-pi/state/` | service account, private |
+| Soloist data/session | `/var/lib/soloist-pi/state/soloist/` | service account, private; preserve across upgrades |
 | Soloist cache | `/var/cache/soloist-pi/` | service account |
-| Managed Soloist executable | `/var/lib/soloist-pi/managed/soloist` | service account; writable by supervisor for validated atomic updates |
-| Python virtual environment | `/opt/soloist-pi/venv/` | root-owned and not writable by service account |
+| Managed Soloist executable | `/var/lib/soloist-pi/managed/soloist` | service account; validated atomic updates only |
+| Python virtual environment | `/opt/soloist-pi/venv/` | root-owned; not writable by service account |
 | systemd unit | `/etc/systemd/system/soloist-pi.service` | root-owned, mode `0644` |
 
-The config file should contain paths and non-secret runtime settings; the API
-key file should contain only the key. The Ansible deployment account uses
-privilege escalation to install these files with the service account as owner.
-Do not place the managed executable inside the Python virtual environment.
+The service unit contains no secret or runtime settings beyond the config-file
+path and the current placeholder-mode switch. The real Soloist interface
+requires its API key as an argument; keep it out of logs and document that a
+process running as the same user may inspect process arguments.
 
-## Ansible deployment
+## Deployment boundary
 
-If configuration is to be declared and repeatably applied, use Ansible as the
-provisioning/deployment interface rather than growing a custom shell installer.
-Keep this separate from the Python package, for example under
-`deploy/ansible/`. The playbook should:
+Ansible lives under `deploy/ansible/`, separate from the Python package. It
+asserts Debian 13 arm64, Python 3.13, `venv`, and `ensurepip`; creates the
+service account and separated directories; installs the exact built wheel into
+the root-owned virtual environment; deploys TOML, Vault-provided key, and unit;
+and enables the service. Re-application should be idempotent. It must not copy
+or overwrite paired session data, generated runtime metadata, cache contents,
+or the self-updated Soloist executable.
 
-1. Assert the expected Debian/arm64 target and required Python 3.13 `venv` and
-   `ensurepip` provisioning prerequisites.
-2. Create the unprivileged `soloist-pi` account and the separated directories
-   above with explicit ownership and modes.
-3. Create or maintain the root-owned virtual environment with
-   `python3.13 -m venv` and install the supplied built wheel using that
-   environment's `python -m pip`.
-4. Deploy the TOML configuration, API-key file, and unit. Use Ansible Vault
-   (or an equivalent secret source) for the API key; do not commit plaintext
-   credentials. Secret-handling tasks must suppress task output and diffs.
-5. Enable the service on first installation and restart it only when the wheel,
-   unit, or effective configuration changes.
-6. Never manage or overwrite Soloist's paired session, generated runtime
-   metadata, cache contents, or the self-updated Soloist binary as ordinary
-   Ansible templates/copies.
+Build with `just check` and `just build` on the development host. Deploy the
+wheel artifact, not a Git checkout. See the
+[Ansible runbook](../deploy/ansible/README.md) for inventory, Vault, and
+command details. The installed package remains standard-library-only and has
+no Ansible dependency.
 
-Build and deploy flow:
+## Remaining Soloist backend work
 
-1. Run `just check` and `just build` on the development machine.
-2. Run the Ansible playbook against the Pi, passing the exact built wheel as an
-   artifact. Do not install from a Git checkout or have systemd invoke `uv`.
-3. On first start, select the new Soloist device in the Spotify app on the
-   same local network to create the persistent Connect session.
-4. For a later `soloist-pi` release, build a new wheel, deploy it, and restart
-   the service. This application release is separate from the supervisor's
-   validated updates of the Soloist executable.
+The placeholder is an integration smoke test, not a Soloist substitute for
+production. Before removing `--placeholder`, implement and test:
 
-A later `just deploy PI=...` target may wrap wheel selection and the Ansible
-command. Keep the deployment logic in the playbook, not embedded in the
-justfile. Do not add Ansible dependencies to the installed Python package.
+- startup release checks only; do not poll in the background or restart a
+  running Soloist process because a release appears;
+- on exit status `10`, force-download the current archive and restart even if
+  the exit occurs long after startup; bound immediate expiry retries while
+  allowing later refresh after a meaningful successful run;
+- forward `SIGTERM`, wait for the process, and kill only after a timeout;
+- continue with a usable installed binary when the CDN is unavailable, and
+  fail clearly if no usable binary exists;
+- enforce download/archive size limits; accept only the expected regular
+  `soloist` member, reject links and other file types, and never extract
+  arbitrary paths;
+- validate a staged executable with `soloist --version`, then atomically
+  replace the managed binary so failures preserve the previous working copy;
+- save release metadata atomically and compare available ETag, checksum, or
+  Last-Modified validators; status-10 refreshes must download regardless of
+  saved metadata;
+- keep API keys out of logs and systemd unit contents.
 
-## Implementation sequence
-
-1. Implement and test the supervisor TOML loader, validation, secret-file
-   handling, and argument construction with fake Soloist executables.
-2. Settle the final directory paths and add the config path to `soloist-pi run`
-   and the systemd unit. Update CLI help and README installation/configuration
-   instructions together.
-3. Add the Ansible inventory example, playbook, templates, and Vault variable
-   conventions in the deployment-only directory. Do not check in a real API
-   key or machine-specific secret.
-4. Test first install, idempotent re-apply, configuration-triggered restart,
-   application upgrade, and preservation of the Connect session and managed
-   binary on the target (with no Spotify credentials in automated tests).
-5. Document secret rotation, first-time pairing, recovery/re-pairing, and
-   application rollback procedures before using this for unattended upgrades.
+Before unattended upgrades, document real-device pairing, session preservation
+and recovery/re-pairing, key rotation, and application rollback. Automated tests
+must not need Spotify credentials or public network access.

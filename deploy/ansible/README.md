@@ -34,13 +34,14 @@ Ansible dependency.
 
 ## Deploy
 
-Pass the exact built wheel as `wheel_path`:
+Set `WHEEL` to the exact artifact built above, then run:
 
 ```sh
+WHEEL="$PWD/dist/soloist_pi-VERSION-py3-none-any.whl"
 ansible-playbook \
   -i deploy/ansible/inventory.ini \
   deploy/ansible/site.yml \
-  -e "wheel_path=$PWD/dist/soloist_pi-0.1.0-py3-none-any.whl" \
+  -e "wheel_path=$WHEEL" \
   --ask-vault-pass
 ```
 
