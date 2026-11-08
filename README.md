@@ -19,8 +19,10 @@ Python 3.13 or newer. The `justfile` provides the common project targets:
 just sync          # create/update the development environment
 just check         # lint, format-check, and pytest
 just lint-ansible  # lint deployment playbook (requires ansible-lint)
-just format        # apply Ruff formatting
 just build         # build source and wheel distributions
+just deploy        # deploy the built wheel to the configured Pi
+# Forward Ansible options, e.g. `just deploy --check --diff`
+just format        # apply Ruff formatting
 just clean         # remove generated artifacts
 just               # list available targets
 ```

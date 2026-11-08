@@ -37,15 +37,23 @@ just lint-ansible
 ```
 
 The playbook discovers the wheel at `../dist/soloist_pi-*.whl` relative to
-`ansible/site.yaml` and requires exactly one match. Then run:
+`ansible/site.yaml` and requires exactly one match. Build the wheel first, then
+deploy with:
 
 ```sh
-ansible-playbook \
-  -i ansible/inventory.yaml \
-  ansible/site.yaml
+just build
+just deploy
 ```
 
-Add `--ask-become-pass` if the inventory user needs a sudo password.
+Forward Ansible options as additional recipe arguments. For example, use
+check mode and show the proposed changes with:
+
+```sh
+just deploy --check --diff
+```
+
+If the inventory user needs a sudo password, add `--ask-become-pass` the same
+way.
 
 The playbook asserts Debian 13, arm64, Python 3.13+, and `venv`/`ensurepip`
 support. Ansible auto-discovers the target Python; the playbook uses that same
