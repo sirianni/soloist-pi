@@ -33,13 +33,10 @@ def test_run_uses_default_config_path() -> None:
 
 
 def test_placeholder_runs_and_shuts_down_cleanly(tmp_path: Path) -> None:
-    key_path = tmp_path / "api-key"
-    key_path.write_text("test-secret\n", encoding="utf-8")
-    key_path.chmod(0o600)
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        f'device_name = "Test Device"\n'
-        f'api_key_file = "{key_path}"\n'
+        'device_name = "Test Device"\n'
+        'api_key = "test-secret"\n'
         'data_dir = "/tmp/soloist-state"\n'
         'cache_dir = "/tmp/soloist-cache"\n',
         encoding="utf-8",

@@ -2,11 +2,11 @@
 
 ## Project identity and scope
 
-- This project is **soloist-pi**: the Python distribution and executable are
-  named `soloist-pi`, and the import package is `soloist_pi`.
+- This project and Python distribution/CLI are **soloist-pi**; the import
+  package is `soloist_pi`.
 - It is a Python supervisor for Spotify Soloist on Raspberry Pi / Debian 13
-  arm64. Do not rename the project to `soloistd`; existing Soloist config/data
-  paths may retain the `soloistd` directory names described in the plan.
+  arm64. The installed service account/group and runtime paths use `soloist`,
+  including the production virtual environment at `/opt/soloist/venv`.
 - Focus on the Python application and installable packaging. Ansible and
   deployment automation are out of scope unless explicitly requested.
 - Keep runtime dependencies to the Python standard library. Use `uv` on the
@@ -61,7 +61,7 @@ Follow the Python implementation plan supplied for this repository:
 ## Packaging and deployment boundaries
 
 - Production installation is from a built wheel into the dedicated
-  `/opt/soloist-pi/venv` virtual environment. Create and update that environment
+  `/opt/soloist/venv` virtual environment. Create and update that environment
   on the Pi with Python's `venv` module and the environment's `pip`; `uv` is a
   development/control-host tool and must not be required on the Pi. Have systemd
   execute the installed entry point directly; do not depend on a system-wide

@@ -10,16 +10,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
-DEFAULT_CONFIG_PATH = Path("/var/lib/soloist-pi/config/config.toml")
+DEFAULT_CONFIG_PATH = Path("/var/lib/soloist/config/config.toml")
 
 
 class ConfigError(ValueError):
-    """Raised when configuration or a private key file is invalid."""
+    """Raised when the private configuration is invalid."""
 
 
 @dataclass(frozen=True)
 class Config:
-    """Validated Soloist settings and the separately loaded API key."""
+    """Validated Soloist settings with the API key excluded from repr."""
 
     device_name: str
     api_key: str = field(repr=False)
@@ -54,7 +54,7 @@ class Config:
 
 
 def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> Config:
-    """Read a private TOML config and private API-key file."""
+    """Read and validate the private TOML configuration."""
     config_path = Path(path)
     document = _read_private_file(config_path, "configuration file")
     try:
@@ -67,7 +67,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> Config:
 
     allowed = {
         "device_name",
-        "api_key_file",
+        "api_key",
         "data_dir",
         "cache_dir",
         "cache_size_mb",
@@ -85,10 +85,7 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> Config:
             "device_name must be non-empty and contain no control characters"
         )
 
-    key_path = Path(_required_string(values, "api_key_file"))
-    if not key_path.is_absolute():
-        raise ConfigError("api_key_file must be an absolute path")
-    api_key = _read_api_key(key_path)
+    api_key = _required_api_key(values)
 
     data_dir = _required_path(values, "data_dir")
     cache_dir = _required_path(values, "cache_dir")
@@ -144,15 +141,16 @@ def _read_private_file(path: Path, description: str) -> bytes:
             os.close(descriptor)
 
 
-def _read_api_key(path: Path) -> str:
-    contents = _read_private_file(path, "API key file")
-    try:
-        key = contents.decode("utf-8").strip()
-    except UnicodeDecodeError as exc:
-        raise ConfigError(f"API key file {path} must contain UTF-8 text") from exc
-    if not key or any(character.isspace() for character in key) or "\0" in key:
-        raise ConfigError(f"API key file {path} must contain exactly one non-empty key")
-    return key
+def _required_api_key(values: dict[str, object]) -> str:
+    value = values.get("api_key")
+    if (
+        not isinstance(value, str)
+        or not value
+        or any(character.isspace() for character in value)
+        or "\0" in value
+    ):
+        raise ConfigError("api_key must contain exactly one non-empty key")
+    return value
 
 
 def _required_string(values: dict[str, object], name: str) -> str:

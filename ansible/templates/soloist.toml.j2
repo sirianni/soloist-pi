@@ -1,0 +1,10 @@
+# Managed by Ansible. Keep this file private; it contains the API key.
+device_name = {{ device_name | to_json }}
+api_key = {{ api_key | to_json }}
+data_dir = {{ data_dir | to_json }}
+cache_dir = "/var/cache/soloist"
+{% if cache_size_mb is not none %}cache_size_mb = {{ cache_size_mb }}
+{% endif %}{% if pipewire_device is not none %}pipewire_device = {{ pipewire_device | to_json }}
+{% endif %}{% if initial_volume is not none %}initial_volume = {{ initial_volume }}
+{% endif %}{% if websocket_address is not none %}websocket_address = {{ websocket_address | to_json }}
+{% endif %}

@@ -1,21 +1,29 @@
 ---
 - name: Deploy the soloist-pi supervisor
-  hosts: soloist_pi
+  hosts: all
   become: true
   gather_facts: true
 
   vars:
-    service_user: soloist-pi
-    service_group: soloist-pi
-    service_home: /var/lib/soloist-pi
-    config_dir: /var/lib/soloist-pi/config
-    state_dir: /var/lib/soloist-pi/state
-    managed_dir: /var/lib/soloist-pi/managed
-    cache_dir: /var/cache/soloist-pi
-    app_root: /opt/soloist-pi
-    venv_dir: /opt/soloist-pi/venv
-    config_path: /var/lib/soloist-pi/config/config.toml
-    api_key_path: /var/lib/soloist-pi/config/api-key
+    wheel_candidates: "{{ query('ansible.builtin.fileglob', playbook_dir ~ '/../dist/soloist_pi-*.whl') }}"
+    wheel_path: "{{ wheel_candidates | first | default('') }}"
+    python_executable: "{{ ansible_facts['python']['executable'] }}"
+    device_name: Ceiling Speakers
+    data_dir: /var/lib/soloist/state/soloist
+    cache_size_mb: null
+    pipewire_device: null
+    initial_volume: null
+    websocket_address: null
+    service_user: soloist
+    service_group: "{{ service_user }}"
+    service_home: /var/lib/soloist
+    config_dir: /var/lib/soloist/config
+    state_dir: /var/lib/soloist/state
+    managed_dir: /var/lib/soloist/managed
+    cache_dir: /var/cache/soloist
+    app_root: /opt/soloist
+    venv_dir: /opt/soloist/venv
+    config_path: /var/lib/soloist/config/config.toml
 
   tasks:
     - name: Assert the supported Debian 13 arm64 target and Python runtime
@@ -25,18 +33,23 @@
           - ansible_facts["distribution_major_version"] == "13"
           - ansible_facts["architecture"] in ["aarch64", "arm64"]
           - ansible_facts["python_version"] is version("3.13", ">=")
-        fail_msg: "soloist-pi deployment requires Debian 13 arm64 and Python 3.13+"
+        fail_msg: "soloist deployment requires Debian 13 arm64 and Python 3.13+"
 
-    - name: Require wheel and Vault-provided API key inputs
+    - name: Require exactly one built soloist-pi wheel
       ansible.builtin.assert:
         that:
-          - wheel_path is defined
-          - (wheel_path | default("")) is match(".*\\.whl$")
-          - soloist_pi_api_key is defined
-          - soloist_pi_api_key | default("") | string | length > 0
+          - wheel_candidates | length == 1
         fail_msg: >-
-          Provide wheel_path and define soloist_pi_api_key in an Ansible Vault
-          group_vars file.
+          Expected exactly one dist/soloist_pi-*.whl relative to this playbook;
+          run just clean and just build.
+
+    - name: Require a host-provided API key
+      ansible.builtin.assert:
+        that:
+          - api_key is defined
+          - api_key | default("") | string | length > 0
+        fail_msg: >-
+          Set a non-empty api_key in the host entry in ansible/inventory.yaml.
       no_log: true
 
     - name: Verify target Python provides venv and ensurepip
@@ -83,7 +96,7 @@
 
     - name: Create the Soloist data directory without managing its contents
       ansible.builtin.file:
-        path: "{{ soloist_pi_data_dir }}"
+        path: "{{ data_dir }}"
         state: directory
         owner: "{{ service_user }}"
         group: "{{ service_group }}"
@@ -127,47 +140,44 @@
           - --force-reinstall
           - "/tmp/{{ wheel_path | basename }}"
       when: wheel_artifact.changed or python_venv.changed
-      notify: Restart soloist-pi
+      changed_when: true
+      notify: Restart soloist
 
     - name: Install private supervisor configuration
       ansible.builtin.template:
-        src: soloist-pi.toml.j2
+        src: soloist.toml.j2
         dest: "{{ config_path }}"
-        owner: "{{ service_user }}"
-        group: "{{ service_group }}"
-        mode: "0600"
-      notify: Restart soloist-pi
-
-    - name: Install API key without exposing it in task output or diffs
-      ansible.builtin.copy:
-        content: "{{ soloist_pi_api_key | string }}\n"
-        dest: "{{ api_key_path }}"
         owner: "{{ service_user }}"
         group: "{{ service_group }}"
         mode: "0600"
       no_log: true
       diff: false
-      notify: Restart soloist-pi
+      notify: Restart soloist
+
+    - name: Remove the obsolete standalone API key file
+      ansible.builtin.file:
+        path: "{{ config_dir }}/api-key"
+        state: absent
 
     - name: Install the systemd unit
       ansible.builtin.template:
-        src: soloist-pi.service.j2
-        dest: /etc/systemd/system/soloist-pi.service
+        src: soloist.service.j2
+        dest: /etc/systemd/system/soloist.service
         owner: root
         group: root
         mode: "0644"
-      notify: Restart soloist-pi
+      notify: Restart soloist
 
     - name: Enable and start the service
       ansible.builtin.systemd_service:
-        name: soloist-pi.service
+        name: soloist.service
         enabled: true
         state: started
         daemon_reload: true
 
   handlers:
-    - name: Restart soloist-pi
+    - name: Restart soloist
       ansible.builtin.systemd_service:
-        name: soloist-pi.service
+        name: soloist.service
         state: restarted
         daemon_reload: true

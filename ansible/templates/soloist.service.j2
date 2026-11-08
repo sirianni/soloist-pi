@@ -5,10 +5,10 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=soloist-pi
-Group=soloist-pi
-WorkingDirectory=/var/lib/soloist-pi
-ExecStart=/opt/soloist-pi/venv/bin/soloist-pi run --config /var/lib/soloist-pi/config/config.toml --placeholder
+User=soloist
+Group=soloist
+WorkingDirectory=/var/lib/soloist
+ExecStart=/opt/soloist/venv/bin/soloist-pi run --config /var/lib/soloist/config/config.toml --placeholder
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure

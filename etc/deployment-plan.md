@@ -2,50 +2,50 @@
 
 ## Current status
 
-The supervisor TOML loader, private API-key file handling, placeholder process
+The supervisor TOML loader with an embedded API key, placeholder process
 supervision, systemd unit, and Ansible wheel deployment are implemented. The
 Ansible deployment has been exercised on Debian 13 arm64 with the placeholder
-service and re-applied idempotently. See the [deployment runbook](../deploy/ansible/README.md)
+service and re-applied idempotently. See the [deployment runbook](../ansible/README.md)
 and the [project README](../README.md).
 
 The Pi uses Python 3.13's built-in `venv` and the environment's `pip` to install
-the wheel. `uv` is used on the development/control host for build and package
-workflows; it is not a Pi prerequisite. systemd executes the installed
-`soloist-pi` entry point directly.
+the `soloist-pi` wheel into `/opt/soloist/venv`. `uv` is used on the
+development/control host for build and package workflows; it is not a Pi
+prerequisite. systemd executes the installed `soloist-pi` entry point directly
+from the `soloist.service` unit under the `soloist` account/group.
 
 The current unit explicitly runs `--placeholder`, which writes a heartbeat to
-stdout every 30 seconds. Replace the temporary API-key value through the Vault
-workflow before deploying a real Soloist backend. The placeholder does not use
-the key.
+stdout every 30 seconds. Add the API key to the ignored local inventory before
+deploying a real Soloist backend. The placeholder does not use the key.
 
 ## Configuration and paths
 
 Spotify Soloist is configured through startup options, not a general-purpose
-config file. `soloist-pi` provides the service-owned TOML layer, validates it,
-reads the API key from a separate private file, and builds Soloist arguments.
+config file. `soloist-pi` provides a service-owned TOML layer, validates it,
+reads the API key from the private TOML config, and builds Soloist arguments.
 Use Python's standard-library `tomllib`; do not add a runtime dependency.
 
 Required TOML settings:
 
 - `device_name`: Spotify Connect name.
-- `api_key_file`: absolute path to a private file containing only the API key.
+- `api_key`: Spotify Soloist API key; the TOML file must remain mode `0600`.
 - `data_dir`: persistent Soloist device/session state.
 - `cache_dir`: volatile playback cache.
 
 Optional settings are `cache_size_mb`, `pipewire_device`, `initial_volume`, and
 `websocket_address`. WebSocket listeners are loopback-only. Do not put one-shot
 pairing or single-track flags in normal service configuration. See
-[`soloist-pi.toml.example`](soloist-pi.toml.example).
+[`soloist.toml.example`](soloist.toml.example).
 
 | Purpose | Path | Ownership / mode |
 | --- | --- | --- |
-| Config and API key | `/var/lib/soloist-pi/config/` | service account, directory `0700`, files `0600` |
-| Persistent state and update metadata | `/var/lib/soloist-pi/state/` | service account, private |
-| Soloist data/session | `/var/lib/soloist-pi/state/soloist/` | service account, private; preserve across upgrades |
-| Soloist cache | `/var/cache/soloist-pi/` | service account |
-| Managed Soloist executable | `/var/lib/soloist-pi/managed/soloist` | service account; validated atomic updates only |
-| Python virtual environment | `/opt/soloist-pi/venv/` | root-owned; not writable by service account |
-| systemd unit | `/etc/systemd/system/soloist-pi.service` | root-owned, mode `0644` |
+| Config including API key | `/var/lib/soloist/config/config.toml` | service account, directory `0700`, file `0600` |
+| Persistent state and update metadata | `/var/lib/soloist/state/` | service account, private |
+| Soloist data/session | `/var/lib/soloist/state/soloist/` | service account, private; preserve across upgrades |
+| Soloist cache | `/var/cache/soloist/` | service account |
+| Managed Soloist executable | `/var/lib/soloist/managed/soloist` | service account; validated atomic updates only |
+| Python virtual environment | `/opt/soloist/venv/` | root-owned; not writable by service account |
+| systemd unit | `/etc/systemd/system/soloist.service` | root-owned, mode `0644` |
 
 The service unit contains no secret or runtime settings beyond the config-file
 path and the current placeholder-mode switch. The real Soloist interface
@@ -54,19 +54,18 @@ process running as the same user may inspect process arguments.
 
 ## Deployment boundary
 
-Ansible lives under `deploy/ansible/`, separate from the Python package. It
+Ansible lives under `ansible/`, separate from the Python package. It
 asserts Debian 13 arm64, Python 3.13, `venv`, and `ensurepip`; creates the
 service account and separated directories; installs the exact built wheel into
-the root-owned virtual environment; deploys TOML, Vault-provided key, and unit;
-and enables the service. Re-application should be idempotent. It must not copy
-or overwrite paired session data, generated runtime metadata, cache contents,
-or the self-updated Soloist executable.
+the root-owned virtual environment; deploys TOML containing the host-provided
+API key and the unit; and enables the service. Re-application should be
+idempotent. It must not copy or overwrite paired session data, generated
+runtime metadata, cache contents, or the self-updated Soloist executable.
 
 Build with `just check` and `just build` on the development host. Deploy the
 wheel artifact, not a Git checkout. See the
-[Ansible runbook](../deploy/ansible/README.md) for inventory, Vault, and
-command details. The installed package remains standard-library-only and has
-no Ansible dependency.
+[Ansible runbook](../ansible/README.md) for inventory and command details. The
+installed package remains standard-library-only and has no Ansible dependency.
 
 ## Remaining Soloist backend work
 

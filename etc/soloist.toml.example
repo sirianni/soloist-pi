@@ -1,0 +1,12 @@
+# Copy this file to /var/lib/soloist/config/config.toml and edit it.
+# Keep the file mode 0600; it contains the API key.
+device_name = "Living Room"
+api_key = "replace-with-your-Spotify-Soloist-API-key"
+data_dir = "/var/lib/soloist/state/soloist"
+cache_dir = "/var/cache/soloist"
+
+# Optional settings:
+# cache_size_mb = 500 # Use 0 for no limit, or at least 100.
+# pipewire_device = "alsa_output.platform-sound.analog-stereo"
+# initial_volume = 50 # 0 through 100.
+# websocket_address = "127.0.0.1:9000" # Loopback only.

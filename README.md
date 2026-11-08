@@ -28,18 +28,22 @@ just               # list available targets
 
 Run `just check` and `just build` on the development host. The built wheel is
 installed on the Pi with Python's built-in `venv` and `pip`; the Pi does not
-need `uv`. Production deployment and application upgrades use Ansible. See the
-[deployment runbook](deploy/ansible/README.md) for prerequisites, Vault setup,
-and commands.
+need `uv`. Production deployment and application upgrades use Ansible. The Python
+package and CLI remain `soloist-pi`; the installed service account/group,
+runtime directories, and systemd unit use `soloist`. See the
+[deployment runbook](ansible/README.md) for prerequisites, local inventory
+setup, and commands. The new names are for clean installs; existing installations
+are not migrated automatically.
 
 The example supervisor configuration is
-[`etc/soloist-pi.toml.example`](etc/soloist-pi.toml.example). Keep the API key
-in its separate private file, never in TOML or the systemd unit. The unit
-currently runs `--placeholder`, which logs a heartbeat immediately and every
-30 seconds. View it with:
+[`etc/soloist.toml.example`](etc/soloist.toml.example). The API key is
+stored in the private TOML configuration (mode `0600`), never in the systemd
+unit. A process running as the same user may inspect Soloist's arguments. The
+unit currently runs `--placeholder`, which logs a heartbeat immediately and
+every 30 seconds. View it with:
 
 ```sh
-sudo journalctl -u soloist-pi.service -f
+sudo journalctl -u soloist.service -f
 ```
 
 ## Status

@@ -6,5 +6,3 @@
 /dist/
 /build/
 *.egg-info/
-/deploy/ansible/inventory.ini
-/deploy/ansible/group_vars/soloist_pi/vault.yml

@@ -1,8 +1,0 @@
----
-python_executable: /usr/bin/python3.13
-soloist_pi_device_name: Living Room
-soloist_pi_data_dir: /var/lib/soloist-pi/state/soloist
-soloist_pi_cache_size_mb: null
-soloist_pi_pipewire_device: null
-soloist_pi_initial_volume: null
-soloist_pi_websocket_address: null

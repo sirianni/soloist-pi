@@ -1,0 +1,7 @@
+all:
+  hosts:
+    pi:
+      ansible_host: 192.0.2.10 # Replace with the Pi's address.
+      ansible_user: admin
+      # Set this only in the ignored inventory.yaml, not in this example.
+      api_key: ""

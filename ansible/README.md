@@ -1,0 +1,65 @@
+# Ansible deployment
+
+This playbook provisions Debian 13 arm64 and installs a built wheel into the
+root-owned `/opt/soloist/venv`. It uses the Pi's built-in Python `venv`
+and `pip` to install the wheel; `uv` is not required on the Pi. The playbook
+deploys the placeholder systemd service and does not manage the Soloist
+session, state, cache contents, or managed binary. The Python package has no
+Ansible dependency.
+
+## Prepare inputs
+
+1. Build and test on the development machine:
+
+   ```sh
+   just clean
+   just check
+   just build
+   ```
+
+2. Copy `inventory.yaml.example` to `inventory.yaml`, replace the sample host
+   with your Pi, and set `api_key` under that host. The real inventory is
+   ignored by Git; protect the plaintext key with
+   `chmod 600 ansible/inventory.yaml`. The play targets every inventory host,
+   so list only hosts intended for this deployment.
+3. Ensure Python 3.13 with `venv` and `ensurepip` support is installed on the
+   Pi. `uv` is not needed there.
+4. Adjust the non-secret defaults in the `vars:` section of `site.yaml`,
+   especially the visible device name.
+
+## Deploy
+
+The playbook discovers the wheel at `../dist/soloist_pi-*.whl` relative to
+`ansible/site.yaml` and requires exactly one match. Then run:
+
+```sh
+ansible-playbook \
+  -i ansible/inventory.yaml \
+  ansible/site.yaml
+```
+
+Add `--ask-become-pass` if the inventory user needs a sudo password.
+
+The playbook asserts Debian 13, arm64, Python 3.13+, and `venv`/`ensurepip`
+support. Ansible auto-discovers the target Python; the playbook uses that same
+interpreter to create the virtual environment. It creates the `soloist`
+service account/group and runtime directories, installs the `soloist-pi` wheel,
+deploys the private TOML configuration (including the API key) and
+`soloist.service`, then enables and starts the service. This naming change is
+for clean installs; existing `soloist-pi` installations are not migrated.
+Re-applying without changes is idempotent. A changed wheel, key, config, or
+unit restarts the service; the persistent Soloist data and cache are not copied
+or cleared.
+
+With the current placeholder unit, inspect the heartbeat using:
+
+```sh
+ansible all -i ansible/inventory.yaml -b \
+  -m ansible.builtin.command -a 'journalctl -u soloist.service -n 20 --no-pager'
+```
+
+For first-time setup, create/select the Soloist device in Spotify only after a
+real Soloist backend is available. Pairing/session state is intended to remain
+in `/var/lib/soloist/state/soloist` across application upgrades. Rotate the
+key by updating `api_key` in the local inventory and re-applying the play; the
+private TOML configuration is updated and the service restarted.
