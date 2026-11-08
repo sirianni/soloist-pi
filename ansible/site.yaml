@@ -154,11 +154,6 @@
       diff: false
       notify: Restart soloist
 
-    - name: Remove the obsolete standalone API key file
-      ansible.builtin.file:
-        path: "{{ config_dir }}/api-key"
-        state: absent
-
     - name: Install the systemd unit
       ansible.builtin.template:
         src: soloist.service.j2
