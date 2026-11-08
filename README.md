@@ -60,8 +60,8 @@ sudo journalctl -u soloist.service -f
 Configuration validation, placeholder process supervision, journal-visible
 heartbeats, and Ansible deployment have been exercised on a Debian 13 arm64
 Pi. The updater, startup fallback, expiry retry policy, and Soloist process
-handling are covered by offline tests using a local HTTP server and fake
-executables. The `ctl` command and production service-unit switch from
+handling are covered by offline tests using RESPX mocks, a local HTTP server,
+and fake executables. The `ctl` command and production service-unit switch from
 `--placeholder` remain pending. See
 [`etc/deployment-plan.md`](etc/deployment-plan.md) for remaining work.
 

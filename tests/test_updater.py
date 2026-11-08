@@ -16,7 +16,9 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
+import httpx
 import pytest
+import respx
 
 from soloist_pi import updater
 from soloist_pi.updater import ReleaseMetadata, UpdateError, update_binary
@@ -55,58 +57,67 @@ def make_archive(
     return gzip.compress(tar_bytes.getvalue())
 
 
-class LocalCDN:
+MOCK_CDN_URL = "https://cdn.example.test/soloist.tar.gz"
+
+
+class MockCDN:
     def __init__(
         self,
+        router: respx.Router,
         *,
         body: bytes | None = None,
         etag: str | None = '"release-1"',
         last_modified: str | None = "Wed, 01 Jan 2025 00:00:00 GMT",
         status: int = 200,
     ) -> None:
+        self.url = MOCK_CDN_URL
         self.body = body if body is not None else make_archive()
         self.etag = etag
         self.last_modified = last_modified
         self.status = status
-        self.head_count = 0
-        self.get_count = 0
         self.requests: list[str] = []
         self.user_agents: list[str | None] = []
-        self.advertised_length: int | None = None
+        self.head_route = router.head(self.url).mock(side_effect=self._head)
+        self.get_route = router.get(self.url).mock(side_effect=self._get)
+
+    def _head(self, request: httpx.Request) -> httpx.Response:
+        return self._respond(request, method="HEAD")
+
+    def _get(self, request: httpx.Request) -> httpx.Response:
+        return self._respond(request, method="GET")
+
+    def _respond(self, request: httpx.Request, *, method: str) -> httpx.Response:
+        self.requests.append(method)
+        self.user_agents.append(request.headers.get("User-Agent"))
+        headers = {"Content-Length": str(len(self.body))}
+        if self.etag is not None:
+            headers["ETag"] = self.etag
+        if self.last_modified is not None:
+            headers["Last-Modified"] = self.last_modified
+        body = self.body if method == "GET" and self.status == 200 else b""
+        return httpx.Response(
+            self.status,
+            headers=headers,
+            content=body,
+            request=request,
+        )
+
+
+class TruncatedCDN:
+    def __init__(self, body: bytes) -> None:
         cdn = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_HEAD(self) -> None:
-                cdn.head_count += 1
-                cdn.requests.append("HEAD")
-                cdn.user_agents.append(self.headers.get("User-Agent"))
-                self._respond(include_body=False)
-
             def do_GET(self) -> None:
-                cdn.get_count += 1
-                cdn.requests.append("GET")
-                cdn.user_agents.append(self.headers.get("User-Agent"))
-                self._respond(include_body=True)
-
-            def _respond(self, *, include_body: bool) -> None:
-                self.send_response(cdn.status)
-                content_length = (
-                    cdn.advertised_length
-                    if cdn.advertised_length is not None
-                    else len(cdn.body)
-                )
-                self.send_header("Content-Length", str(content_length))
-                if cdn.etag is not None:
-                    self.send_header("ETag", cdn.etag)
-                if cdn.last_modified is not None:
-                    self.send_header("Last-Modified", cdn.last_modified)
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(cdn.body) + 10))
                 self.end_headers()
-                if include_body and cdn.status == 200:
-                    self.wfile.write(cdn.body)
+                self.wfile.write(cdn.body)
 
             def log_message(self, format: str, *args: object) -> None:
                 del format, args
 
+        self.body = body
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -138,7 +149,8 @@ def paths(tmp_path: Path) -> tuple[Path, Path]:
 
 def test_download_installs_validated_executable_and_metadata(tmp_path: Path) -> None:
     binary, metadata = paths(tmp_path)
-    with LocalCDN() as cdn:
+    with respx.mock(assert_all_called=False) as router:
+        cdn = MockCDN(router)
         changed = update_binary(
             binary_path=binary,
             metadata_path=metadata,
@@ -169,7 +181,8 @@ def test_forced_update_skips_head_and_downloads_unchanged_release(
     tmp_path: Path,
 ) -> None:
     binary, metadata = paths(tmp_path)
-    with LocalCDN() as cdn:
+    with respx.mock(assert_all_called=False) as router:
+        cdn = MockCDN(router)
         update_binary(binary_path=binary, metadata_path=metadata, release_url=cdn.url)
         cdn.requests.clear()
 
@@ -187,7 +200,8 @@ def test_forced_update_skips_head_and_downloads_unchanged_release(
 
 def test_changed_etag_downloads_new_binary(tmp_path: Path) -> None:
     binary, metadata = paths(tmp_path)
-    with LocalCDN() as cdn:
+    with respx.mock(assert_all_called=False) as router:
+        cdn = MockCDN(router)
         update_binary(binary_path=binary, metadata_path=metadata, release_url=cdn.url)
         cdn.etag = '"release-2"'
         cdn.body = make_archive([("soloist", make_executable("soloist 2.0"), None)])
@@ -261,7 +275,8 @@ def test_rejects_unsafe_or_ambiguous_archives_and_preserves_binary(
     previous = make_executable("soloist 0.9")
     binary.write_bytes(previous)
     binary.chmod(0o755)
-    with LocalCDN(body=make_archive(members)) as cdn, pytest.raises(UpdateError):
+    with respx.mock(assert_all_called=False) as router, pytest.raises(UpdateError):
+        cdn = MockCDN(router, body=make_archive(members))
         update_binary(
             binary_path=binary,
             metadata_path=metadata,
@@ -280,9 +295,10 @@ def test_invalid_staged_binary_preserves_existing_install(tmp_path: Path) -> Non
     binary.chmod(0o755)
     invalid = b"#!/bin/sh\nprintf 'not soloist\\n'\n"
     with (
-        LocalCDN(body=make_archive([("soloist", invalid, None)])) as cdn,
+        respx.mock(assert_all_called=False) as router,
         pytest.raises(UpdateError, match="failed --version"),
     ):
+        cdn = MockCDN(router, body=make_archive([("soloist", invalid, None)]))
         update_binary(
             binary_path=binary,
             metadata_path=metadata,
@@ -308,7 +324,11 @@ def test_failed_metadata_commit_rolls_back_binary(
         original_replace(source, destination)
 
     monkeypatch.setattr(updater.os, "replace", replace)
-    with LocalCDN() as cdn, pytest.raises(UpdateError, match="cannot commit"):
+    with (
+        respx.mock(assert_all_called=False) as router,
+        pytest.raises(UpdateError, match="cannot commit"),
+    ):
+        cdn = MockCDN(router)
         update_binary(
             binary_path=binary,
             metadata_path=metadata,
@@ -325,9 +345,10 @@ def test_oversized_archive_is_rejected_before_install(
     binary, metadata = paths(tmp_path)
     monkeypatch.setattr(updater, "MAX_ARCHIVE_BYTES", 100)
     with (
-        LocalCDN(body=b"x" * 101) as cdn,
+        respx.mock(assert_all_called=False) as router,
         pytest.raises(UpdateError, match="size limit"),
     ):
+        cdn = MockCDN(router, body=b"x" * 101)
         update_binary(
             binary_path=binary,
             metadata_path=metadata,
@@ -343,12 +364,17 @@ def test_unavailable_cdn_does_not_modify_a_usable_install(tmp_path: Path) -> Non
     binary.write_bytes(previous)
     binary.chmod(0o755)
 
-    with pytest.raises(UpdateError, match="release metadata failed"):
-        update_binary(
-            binary_path=binary,
-            metadata_path=metadata,
-            release_url="http://127.0.0.1:1/missing.tar.gz",
-        )
+    def fail_to_connect(request: httpx.Request) -> None:
+        raise httpx.ConnectError("offline", request=request)
+
+    with respx.mock(assert_all_called=False) as router:
+        router.head(MOCK_CDN_URL).mock(side_effect=fail_to_connect)
+        with pytest.raises(UpdateError, match="release metadata failed"):
+            update_binary(
+                binary_path=binary,
+                metadata_path=metadata,
+                release_url=MOCK_CDN_URL,
+            )
 
     assert updater.is_usable_binary(binary)
     assert binary.read_bytes() == previous
@@ -356,23 +382,27 @@ def test_unavailable_cdn_does_not_modify_a_usable_install(tmp_path: Path) -> Non
 
 def test_rejects_non_200_and_truncated_download(tmp_path: Path) -> None:
     binary, metadata = paths(tmp_path)
-    with LocalCDN(status=503) as cdn, pytest.raises(UpdateError, match="HTTP 503"):
+    with (
+        respx.mock(assert_all_called=False) as router,
+        pytest.raises(UpdateError, match="HTTP 503"),
+    ):
+        cdn = MockCDN(router, status=503)
         update_binary(
             binary_path=binary,
             metadata_path=metadata,
             release_url=cdn.url,
         )
 
-    with LocalCDN() as cdn:
-        # A stale Content-Length simulates a body truncated by the transport.
-        original_body = cdn.body
-        cdn.body = original_body[:-10]
-        cdn.advertised_length = len(original_body)
-        with pytest.raises(UpdateError):
-            update_binary(
-                binary_path=binary,
-                metadata_path=metadata,
-                release_url=cdn.url,
-                force=True,
-            )
-    assert not binary.exists()
+    previous = make_executable("soloist 0.9")
+    binary.write_bytes(previous)
+    binary.chmod(0o755)
+    with TruncatedCDN(make_archive()) as cdn, pytest.raises(UpdateError):
+        update_binary(
+            binary_path=binary,
+            metadata_path=metadata,
+            release_url=cdn.url,
+            force=True,
+        )
+    assert binary.read_bytes() == previous
+    assert updater.is_usable_binary(binary)
+    assert not metadata.exists()

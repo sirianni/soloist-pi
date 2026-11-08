@@ -14,6 +14,7 @@ soloist-pi = "soloist_pi.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8.3.4",
+    "respx>=0.22,<1",
     "ruff>=0.9.6",
     "ty>=0.0.99",
 ]

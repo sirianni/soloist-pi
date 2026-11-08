@@ -17,8 +17,8 @@
 
 - Application code belongs in `src/soloist_pi/`; tests belong in `tests/`.
 - Use `pytest` for tests. Tests must not require Spotify credentials or access
-  to the public network; use local HTTP servers, fixture archives, and fake
-  executables when exercising update/process behavior.
+  to the public network; use RESPX mocks, local HTTP servers, fixture archives,
+  and fake executables when exercising update/process behavior.
 - Keep `uv.lock` committed and update it when project dependencies or metadata
   change.
 - Use the `justfile` for common tasks: `just sync`, `just check`, `just
