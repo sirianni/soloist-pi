@@ -8,9 +8,8 @@ Pi uses Python's built-in `venv` and `pip` to install the wheel; it does not
 need `uv`.
 
 > Configuration validation, the safe Soloist updater, and process supervision
-> are implemented. The checked-in systemd unit runs the heartbeat placeholder
-> with `python -m soloist_pi.placeholder_supervisor`; switch it to `soloist-pi`
-> to run the real backend.
+> are implemented. The systemd service runs the real backend through the
+> installed `soloist-pi` entry point.
 
 ## Development
 
@@ -36,11 +35,10 @@ Run `just check` on the development host. `just deploy` builds the current
 wheel before installing it on the Pi. Production deployment and application upgrades use
 Ansible.
 
-The Python package is `soloist_pi`; `soloist-pi` runs the supervisor,
-while
-`python -m soloist_pi.update` and `python -m soloist_pi.placeholder_supervisor`
-run the updater and placeholder supervisor. On the Pi, run these modules with
-`/opt/soloist/venv/bin/python`.
+The Python package is `soloist_pi`; `soloist-pi` runs the supervisor, and
+`python -m soloist_pi.update` forces an update. The heartbeat placeholder is
+available for development as `python -m soloist_pi.placeholder_supervisor`.
+On the Pi, the service runs `/opt/soloist/venv/bin/soloist-pi` directly.
 The installed service account/group, runtime directories, and systemd unit use
 `soloist`. See the
 [deployment runbook](ansible/README.md) for prerequisites, local inventory
@@ -48,16 +46,13 @@ setup, and commands. The new names are for clean installs; existing installation
 are not migrated automatically.
 
 The example supervisor configuration is
-[`etc/soloist.toml.example`](etc/soloist.toml.example). The API key is
-stored in the private TOML configuration (mode `0600`), never in the systemd
-unit. A process running as the same user may inspect Soloist's arguments. The
-checked-in systemd unit currently runs the placeholder supervisor, which logs
-a heartbeat every 30 seconds. `soloist-pi` (or `python -m soloist_pi`) checks the
-CDN at startup, falls back to a usable installed binary when the CDN is
-unavailable, and then runs Soloist. `python -m soloist_pi.update` forces a
-download and validated installation; status `10` also forces a refresh before
-restarting Soloist. The service does
-not poll for releases while Soloist is running. View the placeholder journal
+[`etc/soloist.toml.example`](etc/soloist.toml.example). The API key is stored
+in the private TOML configuration (mode `0600`), never in the systemd unit. A process running as the same user may inspect Soloist's
+arguments. The service checks the CDN at startup, falls back to a usable
+installed binary when the CDN is unavailable, and then runs Soloist.
+`python -m soloist_pi.update` forces a download and validated installation;
+status `10` also forces a refresh before restarting Soloist. The service does
+not poll for releases while Soloist is running. Follow the service journal
 with:
 
 ```sh
@@ -66,12 +61,11 @@ sudo journalctl -u soloist.service -f
 
 ## Status
 
-Configuration validation, placeholder process supervision, journal-visible
-heartbeats, and Ansible deployment have been exercised on a Debian 13 arm64
-Pi. The updater, startup fallback, expiry retry policy, and Soloist process
-handling are covered by offline tests using RESPX mocks, a local HTTP server,
-and fake executables. The `ctl` command and production service-unit switch to
-the real Soloist supervisor remain pending. See
+Configuration validation, the updater, startup fallback, expiry retry policy,
+and Soloist process handling are covered by offline tests using RESPX mocks, a
+local HTTP server, and fake executables. The production service now starts the
+real supervisor; its first live CDN download and Soloist launch on the Debian
+13 arm64 Pi remain to be verified. See
 [`etc/deployment-plan.md`](etc/deployment-plan.md) for remaining work.
 
 The updater selects Spotify's Linux Soloist build for supported `arm64` and

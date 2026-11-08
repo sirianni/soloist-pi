@@ -1,10 +1,10 @@
-# Remaining Soloist integration work
+# Soloist integration status
 
 The configuration loader, safe updater, and real `soloist-pi` backend are
-implemented. The checked-in systemd/Ansible service configuration uses the
-`python -m soloist_pi.placeholder_supervisor` module, so deployment continues
-to run the heartbeat until its `ExecStart` is switched to `soloist-pi`. See the
-[project README](../README.md) and [deployment runbook](../ansible/README.md).
+implemented. The systemd/Ansible service now starts the installed `soloist-pi`
+entry point. The first live CDN download and Soloist launch on the Debian 13
+arm64 Pi still need to be verified. See the [project README](../README.md) and
+[deployment runbook](../ansible/README.md).
 
 The backend enforces the following behavior, covered by offline tests using
 local HTTP servers, fixture archives, and fake executables:
@@ -35,9 +35,8 @@ local HTTP servers, fixture archives, and fake executables:
 ## Remaining work
 
 - Define and implement the `ctl` command if control operations are needed.
-- In a deployment increment, switch the production service unit from the
-  placeholder module to `soloist-pi` and exercise the real backend on the
-  Debian 13 arm64 Pi.
+- Deploy the updated service unit to the Debian 13 arm64 Pi and verify the live
+  CDN download, staged `soloist --version` validation, and Soloist startup.
 - Before unattended upgrades, document recovery and re-pairing if Soloist's
   session state is lost or corrupted, plus application rollback procedures.
   The deployment runbook already covers initial pairing, session preservation

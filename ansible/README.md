@@ -3,9 +3,9 @@
 This playbook provisions Debian 13 arm64 and installs a built wheel into the
 root-owned `/opt/soloist/venv`. It uses the Pi's built-in Python `venv`
 and `pip` to install the wheel; `uv` is not required on the Pi. The playbook
-deploys the placeholder systemd service and does not manage the Soloist
-session, state, cache contents, or managed binary. The Python package has no
-Ansible dependency.
+deploys the real `soloist-pi` systemd supervisor. It does not manage the
+Soloist session, state, cache contents, or managed binary beyond what the
+supervisor manages at runtime. The Python package has no Ansible dependency.
 
 ## Prepare inputs
 
@@ -63,15 +63,16 @@ Re-applying without changes is idempotent. A changed wheel, key, config, or
 unit restarts the service; the persistent Soloist data and cache are not copied
 or cleared.
 
-With the current placeholder unit, inspect the heartbeat using:
+Inspect the service's startup update and Soloist process logs using:
 
 ```sh
 ansible all -i ansible/inventory.yaml -b \
   -m ansible.builtin.command -a 'journalctl -u soloist.service -n 20 --no-pager'
 ```
 
-For first-time setup, create/select the Soloist device in Spotify only after a
-real Soloist backend is available. Pairing/session state is intended to remain
-in `/var/lib/soloist/state/soloist` across application upgrades. Rotate the
-key by updating `api_key` in the local inventory and re-applying the play; the
-private TOML configuration is updated and the service restarted.
+For first-time setup, create/select the Soloist device in Spotify and verify
+that the service downloads and launches Soloist successfully. Pairing/session
+state is intended to remain in `/var/lib/soloist/state/soloist` across
+application upgrades. Rotate the key by updating `api_key` in the local
+inventory and re-applying the play; the private TOML configuration is updated
+and the service restarted.
