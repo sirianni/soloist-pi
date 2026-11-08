@@ -1,11 +1,11 @@
 # soloist-pi
 
 A small Python supervisor for running Spotify Soloist on a Raspberry Pi. The
-runtime is intended to use only the Python standard library; `uv` manages the
-development environment and builds packages on the development host, `pytest`
-runs the test suite, `ruff` handles linting and formatting, and Astral `ty`
-checks Python types. The Pi uses
-Python's built-in `venv` and `pip` to install the wheel; it does not need `uv`.
+runtime uses HTTPX for CDN requests; `uv` manages the development environment
+and builds packages on the development host, `pytest` runs the test suite,
+`ruff` handles linting and formatting, and Astral `ty` checks Python types. The
+Pi uses Python's built-in `venv` and `pip` to install the wheel; it does not
+need `uv`.
 
 > Configuration validation, the safe Soloist updater, and process supervision
 > are implemented. The checked-in systemd unit still explicitly selects the
@@ -66,8 +66,8 @@ executables. The `ctl` command and production service-unit switch from
 [`etc/deployment-plan.md`](etc/deployment-plan.md) for remaining work.
 
 The project targets Linux arm64 for the Soloist runtime; the Python package
-itself is platform-independent. Runtime code will use no third-party Python
-dependencies.
+itself is platform-independent. HTTPX is installed as a runtime dependency in
+the production virtual environment.
 
 ## Related projects
 - https://github.com/mintopia/encore

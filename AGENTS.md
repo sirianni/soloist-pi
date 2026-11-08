@@ -9,10 +9,9 @@
   including the production virtual environment at `/opt/soloist/venv`.
 - Focus on the Python application and installable packaging. Ansible and
   deployment automation are out of scope unless explicitly requested.
-- Keep runtime dependencies to the Python standard library. Use `uv` on the
-  development/control host for environment, lockfile, build, and package
-  workflows; use Python's `venv` and the environment's `pip` for target-side
-  wheel installation. Ruff handles lint/format.
+- Use `uv` on the development/control host for environment, lockfile, build,
+  and package workflows; use Python's `venv` and the environment's `pip` for
+  target-side wheel installation. Ruff handles lint/format.
 
 ## Layout and development workflow
 
@@ -66,8 +65,8 @@ Follow the Python implementation plan supplied for this repository:
   development/control-host tool and must not be required on the Pi. Have systemd
   execute the installed entry point directly; do not depend on a system-wide
   Python package install.
-- Keep the Python package platform-independent and standard-library-only; the
-  managed Soloist binary is specifically Linux arm64 for the initial target.
+- Keep the Python package platform-independent; the managed Soloist binary is
+  specifically Linux arm64 for the initial target.
 - Do not add Ansible roles/playbooks or secret deployment configuration unless
   explicitly asked. Keep any future deployment work separate from the core
   supervisor and package.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gzip
-import http.client
 import json
 import os
 import selectors
@@ -13,14 +12,13 @@ import subprocess
 import tarfile
 import tempfile
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import zlib
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from email.message import Message
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import BinaryIO
+
+import httpx
 
 DEFAULT_RELEASE_URL = (
     "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
@@ -39,18 +37,6 @@ MAX_VERSION_OUTPUT_BYTES = 4096
 _CHUNK_SIZE = 64 * 1024
 
 
-class _HTTPResponse(Protocol):
-    headers: Message
-
-    def geturl(self) -> str: ...
-
-    def getcode(self) -> int | None: ...
-
-    def read(self, amount: int = -1) -> bytes: ...
-
-    def close(self) -> None: ...
-
-
 class UpdateError(RuntimeError):
     """Raised when the current Soloist release cannot be installed safely."""
 
@@ -66,7 +52,7 @@ class ReleaseMetadata:
     content_length: int | None = None
 
     @classmethod
-    def from_headers(cls, url: str, headers: Message) -> ReleaseMetadata:
+    def from_headers(cls, url: str, headers: Mapping[str, str]) -> ReleaseMetadata:
         """Build metadata from an HTTP response's headers."""
         etag = _header(headers, "ETag")
         checksum = _header(headers, "X-Amz-Checksum-Crc32c")
@@ -142,15 +128,12 @@ def binary_version(path: Path | str = DEFAULT_BINARY_PATH) -> str | None:
 
 
 def _head_metadata(url: str) -> ReleaseMetadata:
-    request = urllib.request.Request(
-        url,
-        method="HEAD",
-        headers={"User-Agent": USER_AGENT},
+    client, response = _open_request(
+        "HEAD", url, HEAD_TIMEOUT_SECONDS, "release metadata"
     )
-    response = _open_request(request, HEAD_TIMEOUT_SECONDS, "release metadata")
     try:
         _require_success(response, "release metadata")
-        _check_redirect_scheme(url, response.geturl())
+        _check_redirect_scheme(url, str(response.url))
         metadata = ReleaseMetadata.from_headers(url, response.headers)
         if (
             metadata.content_length is not None
@@ -159,7 +142,7 @@ def _head_metadata(url: str) -> ReleaseMetadata:
             raise UpdateError("Soloist archive exceeds the download size limit")
         return metadata
     finally:
-        response.close()
+        _close_request(client, response)
 
 
 def _download_and_install(
@@ -168,15 +151,12 @@ def _download_and_install(
     binary_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     metadata_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-    request = urllib.request.Request(
-        release_url,
-        method="GET",
-        headers={"User-Agent": USER_AGENT},
+    client, response = _open_request(
+        "GET", release_url, DOWNLOAD_TIMEOUT_SECONDS, "archive download"
     )
-    response = _open_request(request, DOWNLOAD_TIMEOUT_SECONDS, "archive download")
     try:
         _require_success(response, "archive download")
-        _check_redirect_scheme(release_url, response.geturl())
+        _check_redirect_scheme(release_url, str(response.url))
         downloaded_metadata = ReleaseMetadata.from_headers(
             release_url, response.headers
         )
@@ -219,17 +199,14 @@ def _download_and_install(
     except OSError as exc:
         raise UpdateError(f"cannot install Soloist: {exc}") from exc
     finally:
-        response.close()
+        _close_request(client, response)
 
 
-def _copy_limited(response: _HTTPResponse, destination: Path) -> None:
+def _copy_limited(response: httpx.Response, destination: Path) -> None:
     total = 0
     try:
         with destination.open("xb") as output:
-            while True:
-                chunk = response.read(_CHUNK_SIZE)
-                if not chunk:
-                    break
+            for chunk in response.iter_raw(chunk_size=_CHUNK_SIZE):
                 total += len(chunk)
                 if total > MAX_ARCHIVE_BYTES:
                     raise UpdateError("Soloist archive exceeds the download size limit")
@@ -238,7 +215,7 @@ def _copy_limited(response: _HTTPResponse, destination: Path) -> None:
             os.fsync(output.fileno())
     except UpdateError:
         raise
-    except (OSError, http.client.HTTPException, urllib.error.URLError) as exc:
+    except (OSError, httpx.HTTPError) as exc:
         raise UpdateError(f"cannot save Soloist archive: {exc}") from exc
     if total == 0:
         raise UpdateError("CDN returned an empty Soloist archive")
@@ -522,39 +499,43 @@ def _kill_version_process(process: subprocess.Popen[bytes]) -> None:
 
 
 def _open_request(
-    request: urllib.request.Request, timeout: int, description: str
-) -> _HTTPResponse:
+    method: str, url: str, timeout: int, description: str
+) -> tuple[httpx.Client, httpx.Response]:
+    client = httpx.Client(
+        timeout=timeout,
+        follow_redirects=True,
+        headers={"User-Agent": USER_AGENT},
+    )
     try:
-        return urllib.request.urlopen(request, timeout=timeout)
-    except (
-        OSError,
-        ValueError,
-        urllib.error.URLError,
-        urllib.error.HTTPError,
-    ) as exc:
-        if isinstance(exc, urllib.error.HTTPError):
-            exc.close()
-            message = f"HTTP {exc.code}"
-        else:
-            reason = getattr(exc, "reason", None)
-            message = str(reason or exc)
+        request = client.build_request(method, url)
+        response = client.send(request, stream=True)
+        return client, response
+    except (OSError, ValueError, httpx.HTTPError) as exc:
+        client.close()
+        message = str(exc) or type(exc).__name__
         raise UpdateError(f"{description} failed: {message}") from exc
 
 
-def _require_success(response: _HTTPResponse, description: str) -> None:
-    status = response.getcode()
-    if status != 200:
-        raise UpdateError(f"{description} returned HTTP {status}")
+def _close_request(client: httpx.Client, response: httpx.Response) -> None:
+    try:
+        response.close()
+    finally:
+        client.close()
+
+
+def _require_success(response: httpx.Response, description: str) -> None:
+    if response.status_code != 200:
+        raise UpdateError(f"{description} returned HTTP {response.status_code}")
 
 
 def _check_redirect_scheme(original_url: str, final_url: str) -> None:
-    original_scheme = urllib.parse.urlsplit(original_url).scheme.lower()
-    final_scheme = urllib.parse.urlsplit(final_url).scheme.lower()
+    original_scheme = httpx.URL(original_url).scheme.lower()
+    final_scheme = httpx.URL(final_url).scheme.lower()
     if original_scheme != final_scheme:
         raise UpdateError("CDN redirect changed the URL scheme")
 
 
-def _header(headers: Message, name: str) -> str | None:
+def _header(headers: Mapping[str, str], name: str) -> str | None:
     value = headers.get(name)
     if value is None:
         return None
