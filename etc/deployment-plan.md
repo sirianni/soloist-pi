@@ -43,7 +43,7 @@ pairing or single-track flags in normal service configuration. See
 | Persistent state and update metadata | `/var/lib/soloist/state/` | service account, private |
 | Soloist data/session | `/var/lib/soloist/state/soloist/` | service account, private; preserve across upgrades |
 | Soloist cache | `/var/cache/soloist/` | service account |
-| Managed Soloist executable | `/var/lib/soloist/managed/soloist` | service account; validated atomic updates only |
+| Managed Soloist executable | `/var/lib/soloist/bin/soloist` | service account; validated atomic updates only |
 | Python virtual environment | `/opt/soloist/venv/` | root-owned; not writable by service account |
 | systemd unit | `/etc/systemd/system/soloist.service` | root-owned, mode `0644` |
 

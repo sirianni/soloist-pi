@@ -9,6 +9,10 @@ sync:
 lint:
     uv run ruff check
 
+# Lint the Ansible deployment (requires ansible-lint on PATH).
+lint-ansible:
+    ansible-lint ansible/site.yaml
+
 # Format the project with Ruff.
 format:
     uv run ruff format

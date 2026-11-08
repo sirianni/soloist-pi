@@ -27,7 +27,14 @@ Ansible dependency.
 4. Adjust the non-secret defaults in the `vars:` section of `site.yaml`,
    especially the visible device name.
 
-## Deploy
+## Validate and deploy
+
+On the development host, optionally lint the playbook with `ansible-lint`
+installed:
+
+```sh
+just lint-ansible
+```
 
 The playbook discovers the wheel at `../dist/soloist_pi-*.whl` relative to
 `ansible/site.yaml` and requires exactly one match. Then run:

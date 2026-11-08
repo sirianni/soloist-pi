@@ -9,7 +9,6 @@
     wheel_path: "{{ wheel_candidates | first | default('') }}"
     python_executable: "{{ ansible_facts['python']['executable'] }}"
     device_name: Ceiling Speakers
-    data_dir: /var/lib/soloist/state/soloist
     cache_size_mb: null
     pipewire_device: null
     initial_volume: null
@@ -17,13 +16,14 @@
     service_user: soloist
     service_group: "{{ service_user }}"
     service_home: /var/lib/soloist
-    config_dir: /var/lib/soloist/config
-    state_dir: /var/lib/soloist/state
-    managed_dir: /var/lib/soloist/managed
+    state_dir: "{{ service_home }}/state"
+    data_dir: "{{ state_dir }}/soloist"
+    config_dir: "{{ service_home }}/config"
+    bin_dir: "{{ service_home }}/bin"
     cache_dir: /var/cache/soloist
     app_root: /opt/soloist
-    venv_dir: /opt/soloist/venv
-    config_path: /var/lib/soloist/config/config.toml
+    venv_dir: "{{ app_root }}/venv"
+    config_path: "{{ config_dir }}/config.toml"
 
   tasks:
     - name: Assert the supported Debian 13 arm64 target and Python runtime
@@ -82,7 +82,7 @@
         group: root
         mode: "0755"
 
-    - name: Create private service configuration and state directories
+    - name: Create private service runtime directories
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -92,9 +92,9 @@
       loop:
         - "{{ config_dir }}"
         - "{{ state_dir }}"
-        - "{{ managed_dir }}"
+        - "{{ bin_dir }}"
 
-    - name: Create the Soloist data directory without managing its contents
+    - name: Create the Soloist data directory
       ansible.builtin.file:
         path: "{{ data_dir }}"
         state: directory
@@ -102,7 +102,7 @@
         group: "{{ service_group }}"
         mode: "0700"
 
-    - name: Create cache directory without managing its contents
+    - name: Create cache directory
       ansible.builtin.file:
         path: "{{ cache_dir }}"
         state: directory
