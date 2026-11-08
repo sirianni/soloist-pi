@@ -13,8 +13,8 @@ lint:
 lint-ansible:
     ansible-lint ansible/site.yaml
 
-# Deploy the built wheel using the local Ansible inventory; forward extra args.
-deploy *args:
+# Build the current wheel, then deploy it using the local Ansible inventory.
+deploy *args: build
     ansible-playbook -i ansible/inventory.yaml ansible/site.yaml {{ args }}
 
 # Format the project with Ruff.

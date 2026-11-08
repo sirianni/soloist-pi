@@ -23,7 +23,7 @@ just check         # lint, format-check, type-check, and pytest
 just typecheck     # run Astral ty directly
 just lint-ansible  # lint deployment playbook (requires ansible-lint)
 just build         # build source and wheel distributions
-just deploy        # deploy the built wheel to the configured Pi
+just deploy        # build the wheel, then deploy it to the configured Pi
 # Forward Ansible options, e.g. `just deploy --check --diff`
 just format        # apply Ruff formatting
 just clean         # remove generated artifacts
@@ -32,10 +32,12 @@ just               # list available targets
 
 ## Build and deploy
 
-Run `just check` and `just build` on the development host. The built wheel is
-installed on the Pi with Python's built-in `venv` and `pip`; the Pi does not
-need `uv`. Production deployment and application upgrades use Ansible. The
-Python package is `soloist_pi`; `soloist-pi` runs the supervisor, while
+Run `just check` on the development host. `just deploy` builds the current
+wheel before installing it on the Pi. Production deployment and application upgrades use
+Ansible.
+
+The Python package is `soloist_pi`; `soloist-pi` runs the supervisor,
+while
 `python -m soloist_pi.update` and `python -m soloist_pi.placeholder_supervisor`
 run the updater and placeholder supervisor. On the Pi, run these modules with
 `/opt/soloist/venv/bin/python`.

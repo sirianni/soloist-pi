@@ -12,9 +12,7 @@ Ansible dependency.
 1. Build and test on the development machine:
 
    ```sh
-   just clean
    just check
-   just build
    ```
 
 2. Copy `inventory.yaml.example` to `inventory.yaml`, replace the sample host
@@ -37,11 +35,10 @@ just lint-ansible
 ```
 
 The playbook discovers the wheel at `../dist/soloist_pi-*.whl` relative to
-`ansible/site.yaml` and requires exactly one match. Build the wheel first, then
-deploy with:
+`ansible/site.yaml` and requires exactly one match. `just deploy` builds the
+current wheel first, then deploys it:
 
 ```sh
-just build
 just deploy
 ```
 
