@@ -29,8 +29,12 @@ format-check:
 test:
     uv run pytest
 
-# Run lint, formatting, and tests.
-check: lint format-check test
+# Run ty's static type checker.
+typecheck:
+    uv run ty check
+
+# Run lint, formatting, type checking, and tests.
+check: lint format-check typecheck test
 
 # Build source and wheel distributions.
 build:

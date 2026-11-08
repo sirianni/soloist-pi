@@ -9,6 +9,7 @@ import threading
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from soloist_pi.config import Config
 from soloist_pi.updater import (
@@ -118,7 +119,9 @@ def _run_child(command: Sequence[str], name: str) -> tuple[int, float, bool]:
         stop_requested.set()
 
     for signum in (signal.SIGTERM, signal.SIGINT):
-        previous_handlers[signum] = signal.signal(signum, request_stop)
+        previous_handlers[signum] = cast(
+            signal.Handlers, signal.signal(signum, request_stop)
+        )
 
     started_at = time.monotonic()
     try:

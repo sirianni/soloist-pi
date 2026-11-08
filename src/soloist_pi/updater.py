@@ -18,8 +18,9 @@ import urllib.parse
 import urllib.request
 import zlib
 from dataclasses import asdict, dataclass
+from email.message import Message
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Protocol
 
 DEFAULT_RELEASE_URL = (
     "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
@@ -38,6 +39,18 @@ MAX_VERSION_OUTPUT_BYTES = 4096
 _CHUNK_SIZE = 64 * 1024
 
 
+class _HTTPResponse(Protocol):
+    headers: Message
+
+    def geturl(self) -> str: ...
+
+    def getcode(self) -> int | None: ...
+
+    def read(self, amount: int = -1) -> bytes: ...
+
+    def close(self) -> None: ...
+
+
 class UpdateError(RuntimeError):
     """Raised when the current Soloist release cannot be installed safely."""
 
@@ -53,7 +66,7 @@ class ReleaseMetadata:
     content_length: int | None = None
 
     @classmethod
-    def from_headers(cls, url: str, headers: object) -> ReleaseMetadata:
+    def from_headers(cls, url: str, headers: Message) -> ReleaseMetadata:
         """Build metadata from an HTTP response's headers."""
         etag = _header(headers, "ETag")
         checksum = _header(headers, "X-Amz-Checksum-Crc32c")
@@ -209,7 +222,7 @@ def _download_and_install(
         response.close()
 
 
-def _copy_limited(response: object, destination: Path) -> None:
+def _copy_limited(response: _HTTPResponse, destination: Path) -> None:
     total = 0
     try:
         with destination.open("xb") as output:
@@ -407,12 +420,14 @@ def _load_metadata(path: Path) -> ReleaseMetadata | None:
     url = document.get("url")
     if not isinstance(url, str):
         return None
-    fields: dict[str, str | int | None] = {}
-    for name in ("etag", "checksum_crc32c", "last_modified"):
-        value = document.get(name)
-        if value is not None and not isinstance(value, str):
-            return None
-        fields[name] = value
+    etag = document.get("etag")
+    checksum_crc32c = document.get("checksum_crc32c")
+    last_modified = document.get("last_modified")
+    if any(
+        value is not None and not isinstance(value, str)
+        for value in (etag, checksum_crc32c, last_modified)
+    ):
+        return None
     content_length = document.get("content_length")
     if content_length is not None and (
         isinstance(content_length, bool)
@@ -420,11 +435,13 @@ def _load_metadata(path: Path) -> ReleaseMetadata | None:
         or content_length < 0
     ):
         return None
-    fields["content_length"] = content_length
-    try:
-        return ReleaseMetadata(url=url, **fields)  # type: ignore[arg-type]
-    except TypeError:
-        return None
+    return ReleaseMetadata(
+        url=url,
+        etag=etag,
+        checksum_crc32c=checksum_crc32c,
+        last_modified=last_modified,
+        content_length=content_length,
+    )
 
 
 def _same_release(remote: ReleaseMetadata, saved: ReleaseMetadata) -> bool:
@@ -506,7 +523,7 @@ def _kill_version_process(process: subprocess.Popen[bytes]) -> None:
 
 def _open_request(
     request: urllib.request.Request, timeout: int, description: str
-) -> object:
+) -> _HTTPResponse:
     try:
         return urllib.request.urlopen(request, timeout=timeout)
     except (
@@ -524,7 +541,7 @@ def _open_request(
         raise UpdateError(f"{description} failed: {message}") from exc
 
 
-def _require_success(response: object, description: str) -> None:
+def _require_success(response: _HTTPResponse, description: str) -> None:
     status = response.getcode()
     if status != 200:
         raise UpdateError(f"{description} returned HTTP {status}")
@@ -537,7 +554,7 @@ def _check_redirect_scheme(original_url: str, final_url: str) -> None:
         raise UpdateError("CDN redirect changed the URL scheme")
 
 
-def _header(headers: object, name: str) -> str | None:
+def _header(headers: Message, name: str) -> str | None:
     value = headers.get(name)
     if value is None:
         return None

@@ -3,7 +3,8 @@
 A small Python supervisor for running Spotify Soloist on a Raspberry Pi. The
 runtime is intended to use only the Python standard library; `uv` manages the
 development environment and builds packages on the development host, `pytest`
-runs the test suite, and `ruff` handles linting and formatting. The Pi uses
+runs the test suite, `ruff` handles linting and formatting, and Astral `ty`
+checks Python types. The Pi uses
 Python's built-in `venv` and `pip` to install the wheel; it does not need `uv`.
 
 > Configuration validation, the safe Soloist updater, and process supervision
@@ -17,7 +18,8 @@ Python 3.13 or newer. The `justfile` provides the common project targets:
 
 ```sh
 just sync          # create/update the development environment
-just check         # lint, format-check, and pytest
+just check         # lint, format-check, type-check, and pytest
+just typecheck     # run Astral ty directly
 just lint-ansible  # lint deployment playbook (requires ansible-lint)
 just build         # build source and wheel distributions
 just deploy        # deploy the built wheel to the configured Pi

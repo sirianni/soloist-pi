@@ -10,6 +10,7 @@ import stat
 import tarfile
 import threading
 from collections.abc import Callable
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import TracebackType
@@ -36,7 +37,7 @@ def make_executable(
 
 
 def make_archive(
-    members: list[tuple[str, bytes, bytes | None]] | None = None,
+    members: list[tuple[str, bytes, str | None]] | None = None,
 ) -> bytes:
     if members is None:
         members = [("soloist", make_executable(), None)]
@@ -71,6 +72,7 @@ class LocalCDN:
         self.get_count = 0
         self.requests: list[str] = []
         self.user_agents: list[str | None] = []
+        self.advertised_length: int | None = None
         cdn = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -88,7 +90,12 @@ class LocalCDN:
 
             def _respond(self, *, include_body: bool) -> None:
                 self.send_response(cdn.status)
-                self.send_header("Content-Length", str(len(cdn.body)))
+                content_length = (
+                    cdn.advertised_length
+                    if cdn.advertised_length is not None
+                    else len(cdn.body)
+                )
+                self.send_header("Content-Length", str(content_length))
                 if cdn.etag is not None:
                     self.send_header("ETag", cdn.etag)
                 if cdn.last_modified is not None:
@@ -206,9 +213,7 @@ def test_validator_comparison_precedence_and_fallbacks() -> None:
         content_length=100,
     )
     assert updater._same_release(baseline, baseline)
-    assert not updater._same_release(
-        ReleaseMetadata(**{**baseline.__dict__, "etag": "two"}), baseline
-    )
+    assert not updater._same_release(replace(baseline, etag="two"), baseline)
 
     etag_missing = ReleaseMetadata(
         url=baseline.url,
@@ -218,7 +223,7 @@ def test_validator_comparison_precedence_and_fallbacks() -> None:
     )
     assert updater._same_release(etag_missing, etag_missing)
     assert not updater._same_release(
-        ReleaseMetadata(**{**etag_missing.__dict__, "checksum_crc32c": "crc-b"}),
+        replace(etag_missing, checksum_crc32c="crc-b"),
         etag_missing,
     )
 
@@ -229,7 +234,7 @@ def test_validator_comparison_precedence_and_fallbacks() -> None:
     )
     assert updater._same_release(no_checksum, no_checksum)
     assert not updater._same_release(
-        ReleaseMetadata(**{**no_checksum.__dict__, "content_length": 101}),
+        replace(no_checksum, content_length=101),
         no_checksum,
     )
     assert not updater._same_release(
@@ -250,7 +255,7 @@ def test_validator_comparison_precedence_and_fallbacks() -> None:
     ids=["dot-alias", "traversal", "nested", "symlink", "extra-member", "duplicate"],
 )
 def test_rejects_unsafe_or_ambiguous_archives_and_preserves_binary(
-    tmp_path: Path, members: list[tuple[str, bytes, bytes | None]]
+    tmp_path: Path, members: list[tuple[str, bytes, str | None]]
 ) -> None:
     binary, metadata = paths(tmp_path)
     previous = make_executable("soloist 0.9")
@@ -363,20 +368,6 @@ def test_rejects_non_200_and_truncated_download(tmp_path: Path) -> None:
         original_body = cdn.body
         cdn.body = original_body[:-10]
         cdn.advertised_length = len(original_body)
-
-        # Patch the local handler's header source after server initialization.
-        handler = cdn.server.RequestHandlerClass
-
-        def do_get(self: BaseHTTPRequestHandler) -> None:
-            cdn.get_count += 1
-            cdn.requests.append("GET")
-            self.send_response(200)
-            self.send_header("Content-Length", str(cdn.advertised_length))
-            self.end_headers()
-            self.wfile.write(cdn.body)
-            self.close_connection = True
-
-        handler.do_GET = do_get
         with pytest.raises(UpdateError):
             update_binary(
                 binary_path=binary,
