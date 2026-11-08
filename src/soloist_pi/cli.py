@@ -6,7 +6,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from soloist_pi.config import DEFAULT_CONFIG_PATH, ConfigError, load_config
-from soloist_pi.supervisor import run_placeholder
+from soloist_pi.supervisor import run_placeholder, run_soloist
+from soloist_pi.updater import (
+    DEFAULT_BINARY_PATH,
+    UpdateError,
+    binary_version,
+    update_binary,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,18 +47,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
         try:
-            load_config(args.config)
+            config = load_config(args.config)
         except ConfigError as exc:
             print(f"soloist-pi: configuration error: {exc}", file=sys.stderr)
             return 2
-        if not args.placeholder:
+        if args.placeholder:
+            return run_placeholder()
+        return run_soloist(config)
+
+    if args.command == "update":
+        try:
+            update_binary(force=True)
+        except UpdateError as exc:
+            print(f"soloist-pi: update failed: {exc}", file=sys.stderr)
+            return 1
+        version = binary_version(DEFAULT_BINARY_PATH)
+        if version is None:
             print(
-                "soloist-pi: the Soloist backend is not installed yet; "
-                "use --placeholder to run the heartbeat process",
+                "soloist-pi: update completed but the installed binary is unusable",
                 file=sys.stderr,
             )
-            return 2
-        return run_placeholder()
+            return 1
+        print(f"soloist-pi: installed {version}")
+        return 0
 
     print(f"soloist-pi: {args.command} is not implemented yet", file=sys.stderr)
     return 2

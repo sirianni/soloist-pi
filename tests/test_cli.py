@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from soloist_pi.cli import build_parser
+from soloist_pi.cli import build_parser, main
 from soloist_pi.config import DEFAULT_CONFIG_PATH
 
 
@@ -30,6 +30,38 @@ def test_run_uses_default_config_path() -> None:
     args = build_parser().parse_args(["run"])
 
     assert args.config == DEFAULT_CONFIG_PATH
+
+
+def test_update_command_forces_download_and_reports_version(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def update(**kwargs: object) -> bool:
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr("soloist_pi.cli.update_binary", update)
+    monkeypatch.setattr("soloist_pi.cli.binary_version", lambda path: "soloist 1.2.3")
+
+    assert main(["update"]) == 0
+    assert calls == [{"force": True}]
+    assert capsys.readouterr().out.strip() == "soloist-pi: installed soloist 1.2.3"
+
+
+def test_update_command_reports_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from soloist_pi.updater import UpdateError
+
+    def update(**kwargs: object) -> bool:
+        del kwargs
+        raise UpdateError("offline")
+
+    monkeypatch.setattr("soloist_pi.cli.update_binary", update)
+
+    assert main(["update"]) == 1
+    assert "soloist-pi: update failed: offline" in capsys.readouterr().err
 
 
 def test_placeholder_runs_and_shuts_down_cleanly(tmp_path: Path) -> None:
