@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-soloist-pi = "soloist_pi.cli:main"
+soloist-pi = "soloist_pi.run:main"
 
 [dependency-groups]
 dev = [
