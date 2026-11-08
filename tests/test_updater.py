@@ -47,17 +47,51 @@ def make_archive(
     with tarfile.open(fileobj=tar_bytes, mode="w:") as archive:
         for name, body, linkname in members:
             info = tarfile.TarInfo(name)
-            if linkname is None:
-                info.size = len(body)
-                archive.addfile(info, io.BytesIO(body))
-            else:
+            if linkname is not None:
                 info.type = tarfile.SYMTYPE
                 info.linkname = linkname
                 archive.addfile(info)
+            elif name.endswith("/"):
+                info.type = tarfile.DIRTYPE
+                archive.addfile(info)
+            else:
+                info.size = len(body)
+                archive.addfile(info, io.BytesIO(body))
     return gzip.compress(tar_bytes.getvalue())
 
 
 MOCK_CDN_URL = "https://cdn.example.test/soloist.tar.gz"
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "asset_arch"),
+    [
+        ("Linux", "aarch64", "arm64"),
+        ("Linux", "arm64", "arm64"),
+        ("Linux", "x86_64", "x86_64"),
+        ("Linux", "AMD64", "x86_64"),
+    ],
+)
+def test_release_url_matches_supported_host_architecture(
+    system: str, machine: str, asset_arch: str
+) -> None:
+    assert updater.release_url_for_platform(system=system, machine=machine) == (
+        f"https://soloist-builds.spotifycdn.com/soloist_release_{asset_arch}.tar.gz"
+    )
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "message"),
+    [
+        ("Darwin", "arm64", "not available for darwin"),
+        ("Linux", "riscv64", "no supported Linux build for riscv64"),
+    ],
+)
+def test_release_url_rejects_unsupported_platform(
+    system: str, machine: str, message: str
+) -> None:
+    with pytest.raises(UpdateError, match=message):
+        updater.release_url_for_platform(system=system, machine=machine)
 
 
 class MockCDN:
@@ -147,10 +181,38 @@ def paths(tmp_path: Path) -> tuple[Path, Path]:
     return managed_dir / "soloist", tmp_path / "release.json"
 
 
+def test_update_resolves_release_url_from_host_architecture(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    binary, metadata = paths(tmp_path)
+    monkeypatch.setattr(updater, "release_url_for_platform", lambda: MOCK_CDN_URL)
+    with respx.mock(assert_all_called=False) as router:
+        cdn = MockCDN(router)
+        assert (
+            update_binary(
+                binary_path=binary,
+                metadata_path=metadata,
+                force=True,
+            )
+            is True
+        )
+        assert cdn.requests == ["GET"]
+
+
 def test_download_installs_validated_executable_and_metadata(tmp_path: Path) -> None:
     binary, metadata = paths(tmp_path)
     with respx.mock(assert_all_called=False) as router:
-        cdn = MockCDN(router)
+        cdn = MockCDN(
+            router,
+            body=make_archive(
+                [
+                    ("CHANGELOG.md", b"release notes", None),
+                    ("docs/", b"", None),
+                    ("THIRD_PARTY_LICENSES.txt", b"licenses", None),
+                    ("soloist", make_executable(), None),
+                ]
+            ),
+        )
         changed = update_binary(
             binary_path=binary,
             metadata_path=metadata,
@@ -159,6 +221,7 @@ def test_download_installs_validated_executable_and_metadata(tmp_path: Path) -> 
 
         assert changed is True
         assert binary.read_bytes() == make_executable()
+        assert sorted(path.name for path in binary.parent.iterdir()) == ["soloist"]
         assert stat.S_IMODE(binary.stat().st_mode) == 0o755
         saved = json.loads(metadata.read_text(encoding="utf-8"))
         assert saved["etag"] == '"release-1"'
@@ -263,10 +326,22 @@ def test_validator_comparison_precedence_and_fallbacks() -> None:
         [("../soloist", make_executable(), None)],
         [("elsewhere/soloist", make_executable(), None)],
         [("soloist", b"", "target")],
-        [("soloist", b"", None), ("other", b"x", None)],
-        [("soloist", b"", None), ("soloist", b"", None)],
+        [("soloist", make_executable(), None), ("notes", b"", "target")],
+        [
+            ("soloist", make_executable(), None),
+            ("soloist", make_executable("soloist 2.0"), None),
+        ],
+        [("soloist", b"", None)],
     ],
-    ids=["dot-alias", "traversal", "nested", "symlink", "extra-member", "duplicate"],
+    ids=[
+        "dot-alias",
+        "traversal",
+        "nested",
+        "symlink-executable",
+        "symlink-extra",
+        "duplicate-executable",
+        "empty-executable",
+    ],
 )
 def test_rejects_unsafe_or_ambiguous_archives_and_preserves_binary(
     tmp_path: Path, members: list[tuple[str, bytes, str | None]]

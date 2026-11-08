@@ -72,9 +72,11 @@ and fake executables. The `ctl` command and production service-unit switch to
 the real Soloist supervisor remain pending. See
 [`etc/deployment-plan.md`](etc/deployment-plan.md) for remaining work.
 
-The project targets Linux arm64 for the Soloist runtime; the Python package
-itself is platform-independent. HTTPX is installed as a runtime dependency in
-the production virtual environment.
+The updater selects Spotify's Linux Soloist build for supported `arm64` and
+`x86_64` hosts and rejects unsupported platforms before making a request. The
+production target remains Linux arm64 Raspberry Pi; the Python package itself
+is platform-independent. HTTPX is installed as a runtime dependency in the
+production virtual environment.
 
 ## Related projects
 - https://github.com/mintopia/encore

@@ -20,8 +20,9 @@ local HTTP servers, fixture archives, and fake executables:
   `SIGTERM`, wait for the process, and kill it only after a timeout.
 - If the CDN is unavailable, continue with a usable installed binary; fail
   clearly if no usable binary exists.
-- Treat downloads and archives as untrusted: enforce size limits, accept only
-  the exact regular `soloist` member, reject links and other members, and never
+- Treat downloads and archives as untrusted: enforce size limits; require one
+  exact, regular `soloist` member; ignore other regular files and directories
+  without extracting them; reject links and special file types; and never
   extract arbitrary paths.
 - Validate a staged executable with `soloist --version`, then atomically
   replace the managed binary and release metadata while preserving the previous

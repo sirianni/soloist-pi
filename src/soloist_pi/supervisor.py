@@ -15,7 +15,6 @@ from soloist_pi.config import Config
 from soloist_pi.updater import (
     DEFAULT_BINARY_PATH,
     DEFAULT_METADATA_PATH,
-    DEFAULT_RELEASE_URL,
     UpdateError,
     is_usable_binary,
     update_binary,
@@ -38,7 +37,7 @@ def run_soloist(
     *,
     binary_path: Path | str = DEFAULT_BINARY_PATH,
     metadata_path: Path | str = DEFAULT_METADATA_PATH,
-    release_url: str = DEFAULT_RELEASE_URL,
+    release_url: str | None = None,
 ) -> int:
     """Refresh at startup, run Soloist, and force-refresh on status 10."""
     managed_binary = Path(binary_path)

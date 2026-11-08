@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import platform
 import selectors
 import signal
 import stat
@@ -20,9 +21,13 @@ from typing import BinaryIO
 
 import httpx
 
-DEFAULT_RELEASE_URL = (
-    "https://soloist-builds.spotifycdn.com/soloist_release_arm64.tar.gz"
-)
+RELEASE_BASE_URL = "https://soloist-builds.spotifycdn.com/soloist_release_"
+_ARCHIVE_ARCHES = {
+    "aarch64": "arm64",
+    "arm64": "arm64",
+    "x86_64": "x86_64",
+    "amd64": "x86_64",
+}
 DEFAULT_BINARY_PATH = Path("/var/lib/soloist/bin/soloist")
 DEFAULT_METADATA_PATH = Path("/var/lib/soloist/bin/release.json")
 USER_AGENT = "soloist-pi"
@@ -39,6 +44,22 @@ _CHUNK_SIZE = 64 * 1024
 
 class UpdateError(RuntimeError):
     """Raised when the current Soloist release cannot be installed safely."""
+
+
+def release_url_for_platform(
+    *, system: str | None = None, machine: str | None = None
+) -> str:
+    """Return the official Linux release URL matching this host architecture."""
+    host_system = (system if system is not None else platform.system()).lower()
+    host_machine = (machine if machine is not None else platform.machine()).lower()
+    if host_system != "linux":
+        raise UpdateError(f"Spotify Soloist builds are not available for {host_system}")
+    archive_arch = _ARCHIVE_ARCHES.get(host_machine)
+    if archive_arch is None:
+        raise UpdateError(
+            f"Spotify Soloist has no supported Linux build for {host_machine}"
+        )
+    return f"{RELEASE_BASE_URL}{archive_arch}.tar.gz"
 
 
 @dataclass(frozen=True)
@@ -86,7 +107,7 @@ def update_binary(
     *,
     binary_path: Path | str = DEFAULT_BINARY_PATH,
     metadata_path: Path | str = DEFAULT_METADATA_PATH,
-    release_url: str = DEFAULT_RELEASE_URL,
+    release_url: str | None = None,
     force: bool = False,
 ) -> bool:
     """Ensure the managed binary is current; return whether it was replaced.
@@ -94,6 +115,9 @@ def update_binary(
     A forced refresh skips the metadata probe and always downloads the archive.
     Network and archive failures leave an existing executable untouched.
     """
+    if release_url is None:
+        release_url = release_url_for_platform()
+
     target = Path(binary_path)
     metadata_file = Path(metadata_path)
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -252,44 +276,60 @@ def _extract_expected_executable(archive_path: Path, destination: Path) -> None:
         with archive_path.open("rb") as stream:
             archive_size = archive_path.stat().st_size
             with tarfile.open(fileobj=stream, mode="r:") as archive:
-                member = archive.next()
-                if member is None:
-                    raise UpdateError("Soloist archive is empty")
-                if archive.next() is not None:
-                    raise UpdateError(
-                        "Soloist archive must contain exactly one member named 'soloist'"
-                    )
-                if member.name != "soloist":
-                    raise UpdateError(
-                        "Soloist archive member must be named exactly 'soloist'"
-                    )
-                if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):
-                    raise UpdateError("Soloist archive member must be a regular file")
-                if member.pax_headers:
-                    raise UpdateError("Soloist archive must not use PAX extensions")
-                if not 1 <= member.size <= MAX_EXECUTABLE_BYTES:
-                    raise UpdateError(
-                        "Soloist executable has an invalid or excessive size"
-                    )
-                source = archive.extractfile(member)
-                if source is None:
-                    raise UpdateError("cannot read Soloist archive member")
-                copied = 0
-                with source, destination.open("xb") as output:
-                    while True:
-                        chunk = source.read(_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        copied += len(chunk)
-                        if copied > MAX_EXECUTABLE_BYTES:
+                found_executable = False
+                while (member := archive.next()) is not None:
+                    if member.name == "soloist":
+                        if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):
                             raise UpdateError(
-                                "Soloist executable exceeds the size limit"
+                                "Soloist archive member must be a regular file"
                             )
-                        output.write(chunk)
-                    output.flush()
-                    os.fsync(output.fileno())
-                if copied != member.size:
-                    raise UpdateError("Soloist archive member was truncated")
+                    elif member.isdir():
+                        # Directory entries are harmless because no archive paths are
+                        # ever extracted; only the root executable is written.
+                        continue
+                    elif member.type in (tarfile.REGTYPE, tarfile.AREGTYPE):
+                        # Release archives may include documentation and other regular
+                        # files. Ignore them rather than extracting archive-controlled
+                        # paths.
+                        continue
+                    else:
+                        raise UpdateError(
+                            "Soloist archive entries must be regular files or directories"
+                        )
+                    if member.name != "soloist":
+                        continue
+                    if found_executable:
+                        raise UpdateError(
+                            "Soloist archive contains more than one 'soloist' member"
+                        )
+                    found_executable = True
+                    if not 1 <= member.size <= MAX_EXECUTABLE_BYTES:
+                        raise UpdateError(
+                            "Soloist executable has an invalid or excessive size"
+                        )
+                    source = archive.extractfile(member)
+                    if source is None:
+                        raise UpdateError("cannot read Soloist archive member")
+                    copied = 0
+                    with source, destination.open("xb") as output:
+                        while True:
+                            chunk = source.read(_CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            copied += len(chunk)
+                            if copied > MAX_EXECUTABLE_BYTES:
+                                raise UpdateError(
+                                    "Soloist executable exceeds the size limit"
+                                )
+                            output.write(chunk)
+                        output.flush()
+                        os.fsync(output.fileno())
+                    if copied != member.size:
+                        raise UpdateError("Soloist archive member was truncated")
+                if not found_executable:
+                    raise UpdateError(
+                        "Soloist archive does not contain a regular 'soloist' file"
+                    )
                 _verify_tar_padding(stream, archive.offset, archive_size)
     except UpdateError:
         raise
