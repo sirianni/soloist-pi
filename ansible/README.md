@@ -3,8 +3,9 @@
 This playbook provisions Debian 13 arm64 and installs a built wheel into the
 root-owned `/opt/soloist/venv`. It uses the Pi's built-in Python `venv`
 and `pip` to install the wheel; `uv` is not required on the Pi. The playbook
-deploys the real `soloist-pi` systemd supervisor. It does not manage the
-Soloist session, state, cache contents, or managed binary beyond what the
+deploys the real `soloist-pi` systemd supervisor and configures it as a native
+PipeWire client of `pi`'s PipeWire/WirePlumber user services. It does not manage
+the Soloist session, state, cache contents, or managed binary beyond what the
 supervisor manages at runtime. The Python package has no Ansible dependency.
 
 ## Prepare inputs
@@ -55,13 +56,25 @@ way.
 The playbook asserts Debian 13, arm64, Python 3.13+, and `venv`/`ensurepip`
 support. Ansible auto-discovers the target Python; the playbook uses that same
 interpreter to create the virtual environment. It creates the `soloist`
-service account/group and runtime directories, installs the `soloist-pi` wheel,
-deploys the private TOML configuration (including the API key) and
-`soloist.service`, then enables and starts the service. This naming change is
-for clean installs; existing `soloist-pi` installations are not migrated.
-Re-applying without changes is idempotent. A changed wheel, key, config, or
-unit restarts the service; the persistent Soloist data and cache are not copied
-or cleared.
+service account/group and runtime directories, enables lingering for `pi`, and
+ensures `pi`'s PipeWire socket, PipeWire daemon, and WirePlumber user services
+are enabled and running. A logind systemd drop-in sets mode `0711` on
+`/run/user/<pi-uid>` when that runtime directory is created, allowing `soloist`
+to traverse to the PipeWire socket. Installing the drop-in does not change an
+already-existing runtime directory; if it is still `0700`, the new mode takes
+effect when logind next recreates it. The playbook does not set or assert socket
+modes; on the inspected host both sockets are `0666`, so other local accounts
+can also reach the graph. The service's packaged readiness probe checks actual
+access as `soloist` before each start.
+
+The playbook also installs the `soloist-pi` wheel, private TOML configuration
+(including the API key), and systemd readiness settings. The system service
+runs the packaged `soloist_pi.pipewire_ready` module for a bounded readiness
+check before each start, so it does not launch Soloist before WirePlumber has a
+usable default sink. This naming change is for clean installs;
+existing `soloist-pi` installations are not migrated. Re-applying without
+changes is idempotent. A changed wheel, key, config, or unit restarts the
+service; the persistent Soloist data and cache are not copied or cleared.
 
 Inspect the service's startup update and Soloist process logs using:
 

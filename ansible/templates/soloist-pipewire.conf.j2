@@ -1,0 +1,8 @@
+[Unit]
+Wants=user-runtime-dir@{{ pipewire_uid }}.service user@{{ pipewire_uid }}.service
+After=user-runtime-dir@{{ pipewire_uid }}.service user@{{ pipewire_uid }}.service
+
+[Service]
+Environment=PIPEWIRE_RUNTIME_DIR={{ pipewire_runtime_dir }}
+TimeoutStartSec={{ pipewire_start_timeout_sec }}s
+ExecStartPre={{ venv_dir }}/bin/python -m soloist_pi.pipewire_ready --timeout 60

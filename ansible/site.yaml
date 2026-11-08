@@ -16,6 +16,9 @@
     service_user: soloist
     service_group: "{{ service_user }}"
     service_home: /var/lib/soloist
+    pipewire_user: pi
+    pipewire_runtime_mode: "0711"
+    pipewire_start_timeout_sec: 180
     state_dir: "{{ service_home }}/state"
     data_dir: "{{ state_dir }}/soloist"
     config_dir: "{{ service_home }}/config"
@@ -110,6 +113,84 @@
         group: "{{ service_group }}"
         mode: "0750"
 
+    - name: Look up the PipeWire owner account
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ pipewire_user }}"
+
+    - name: Validate the PipeWire owner account data
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['getent_passwd'][pipewire_user] | length == 6
+          - ansible_facts['getent_passwd'][pipewire_user][1] | int > 0
+          - ansible_facts['getent_passwd'][pipewire_user][4] | length > 0
+        fail_msg: "The PipeWire owner account {{ pipewire_user }} is not usable"
+
+    - name: Record PipeWire owner runtime paths
+      ansible.builtin.set_fact:
+        pipewire_uid: "{{ ansible_facts['getent_passwd'][pipewire_user][1] | int }}"
+        pipewire_gid: "{{ ansible_facts['getent_passwd'][pipewire_user][2] | int }}"
+        pipewire_home: "{{ ansible_facts['getent_passwd'][pipewire_user][4] }}"
+        pipewire_runtime_dir: "/run/user/{{ pipewire_uid }}"
+
+    - name: Look up the PipeWire owner's primary group
+      ansible.builtin.getent:
+        database: group
+        key: "{{ pipewire_gid }}"
+
+    - name: Validate the PipeWire owner's primary group
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['getent_group'] | length == 1
+          - (ansible_facts['getent_group'] | dict2items | first).value | length == 3
+          - (ansible_facts['getent_group'] | dict2items | first).value[1] | int == pipewire_gid
+        fail_msg: "Could not resolve the primary group for {{ pipewire_user }}"
+
+    - name: Record the PipeWire owner's primary group name
+      ansible.builtin.set_fact:
+        pipewire_group: "{{ ansible_facts['getent_group'] | first }}"
+
+    - name: Enable lingering for the PipeWire owner
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/loginctl
+          - enable-linger
+          - "{{ pipewire_user }}"
+      changed_when: false
+
+    - name: Ensure PipeWire and WirePlumber user services are enabled and running
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        scope: user
+        enabled: true
+        state: started
+      loop:
+        - pipewire.socket
+        - pipewire.service
+        - wireplumber.service
+      become: true
+      become_user: "{{ pipewire_user }}"
+      environment:
+        HOME: "{{ pipewire_home }}"
+        XDG_RUNTIME_DIR: "{{ pipewire_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ pipewire_runtime_dir }}/bus"
+
+    - name: Create the runtime-directory systemd drop-in directory
+      ansible.builtin.file:
+        path: "/etc/systemd/system/user-runtime-dir@{{ pipewire_uid }}.service.d"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure the PipeWire runtime-directory mode
+      ansible.builtin.template:
+        src: pipewire-runtime-dir.conf.j2
+        dest: "/etc/systemd/system/user-runtime-dir@{{ pipewire_uid }}.service.d/10-pipewire-public.conf"
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Create a root-owned Python virtual environment
       ansible.builtin.command:
         argv:
@@ -151,6 +232,23 @@
         mode: "0600"
       no_log: true
       diff: false
+      notify: Restart soloist
+
+    - name: Create the Soloist systemd drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/soloist.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install native PipeWire runtime and readiness settings
+      ansible.builtin.template:
+        src: soloist-pipewire.conf.j2
+        dest: /etc/systemd/system/soloist.service.d/10-pipewire.conf
+        owner: root
+        group: root
+        mode: "0644"
       notify: Restart soloist
 
     - name: Install the systemd unit

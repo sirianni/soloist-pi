@@ -70,3 +70,12 @@ Follow the Python implementation plan supplied for this repository:
 - Do not add Ansible roles/playbooks or secret deployment configuration unless
   explicitly asked. Keep any future deployment work separate from the core
   supervisor and package.
+- Never run `just deploy`, an Ansible playbook in apply mode, or another command
+  that changes a target host without explicit user approval for that deployment
+  in the current request. A request to implement deployment automation is not
+  approval to deploy it. Use Ansible—not manual SSH—for approved host changes.
+- Keep deployment automation and docs focused on durable desired state, not
+  incident remediation. A live-host troubleshooting request does not by itself
+  authorize Ansible or README changes. Do not add host-specific cleanup tasks
+  for temporary fixes or document one-off workarounds; only encode a diagnosis
+  as reusable deployment behavior when the user explicitly requests that.

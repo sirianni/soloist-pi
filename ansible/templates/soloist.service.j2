@@ -7,6 +7,7 @@ After=network-online.target
 Type=simple
 User=soloist
 Group=soloist
+SupplementaryGroups=audio
 WorkingDirectory=/var/lib/soloist
 ExecStart=/opt/soloist/venv/bin/soloist-pi
 StandardOutput=journal
