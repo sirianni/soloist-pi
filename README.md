@@ -41,11 +41,14 @@ available for development as `python -m soloist_pi.placeholder_supervisor`.
 On the Pi, the service runs `/opt/soloist/venv/bin/soloist-pi` directly.
 The installed service account/group, runtime directories, and systemd unit use
 `soloist`. Ansible configures Soloist to use native PipeWire through `pi`'s
-headless user services. On the inspected host, the PipeWire sockets are mode
-`0666`, so making `pi`'s runtime directory traversable also makes those sockets
-available to other local accounts; the playbook does not assert or manage their
-modes. See the [deployment runbook](ansible/README.md) for prerequisites,
-inventory setup, and commands. The new names are for clean installs; existing
+headless user services and sets PipeWire's default sink volume to 100% (the
+`pipewire_sink_volume` variable in `ansible/site.yaml`). This affects all audio
+routed through that PipeWire sink, not just Soloist. On the inspected host, the
+PipeWire sockets are mode `0666`, so making `pi`'s runtime directory traversable
+also makes those sockets available to other local accounts; the playbook does
+not assert or manage their modes. See the
+[deployment runbook](ansible/README.md) for prerequisites, inventory setup, and
+commands. The new names are for clean installs; existing
 installations are not migrated automatically.
 
 The example supervisor configuration is

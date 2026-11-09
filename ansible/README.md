@@ -24,7 +24,9 @@ supervisor manages at runtime. The Python package has no Ansible dependency.
 3. Ensure Python 3.13 with `venv` and `ensurepip` support is installed on the
    Pi. `uv` is not needed there.
 4. Adjust the non-secret defaults in the `vars:` section of `site.yaml`,
-   especially the visible device name.
+   especially the visible device name and `pipewire_sink_volume` (default `1.0`,
+   or 100%). This sets the default sink for `pi`'s PipeWire server and affects
+   all audio routed through it, not only Soloist.
 
 ## Validate and deploy
 
@@ -58,7 +60,9 @@ support. Ansible auto-discovers the target Python; the playbook uses that same
 interpreter to create the virtual environment. It creates the `soloist`
 service account/group and runtime directories, enables lingering for `pi`, and
 ensures `pi`'s PipeWire socket, PipeWire daemon, and WirePlumber user services
-are enabled and running. A logind systemd drop-in sets mode `0711` on
+are enabled and running. It also enforces the configured `pipewire_sink_volume`
+on the default audio sink (100% by default), without changing Soloist's own
+stream volume. A logind systemd drop-in sets mode `0711` on
 `/run/user/<pi-uid>` when that runtime directory is created, allowing `soloist`
 to traverse to the PipeWire socket. Installing the drop-in does not change an
 already-existing runtime directory; if it is still `0700`, the new mode takes

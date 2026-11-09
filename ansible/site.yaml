@@ -17,6 +17,7 @@
     service_group: "{{ service_user }}"
     service_home: /var/lib/soloist
     pipewire_user: pi
+    pipewire_sink_volume: 1.0
     pipewire_runtime_mode: "0711"
     pipewire_start_timeout_sec: 180
     state_dir: "{{ service_home }}/state"
@@ -126,11 +127,14 @@
           - ansible_facts['getent_passwd'][pipewire_user][4] | length > 0
         fail_msg: "The PipeWire owner account {{ pipewire_user }} is not usable"
 
-    - name: Record PipeWire owner runtime paths
+    - name: Record PipeWire owner identity
       ansible.builtin.set_fact:
         pipewire_uid: "{{ ansible_facts['getent_passwd'][pipewire_user][1] | int }}"
         pipewire_gid: "{{ ansible_facts['getent_passwd'][pipewire_user][2] | int }}"
         pipewire_home: "{{ ansible_facts['getent_passwd'][pipewire_user][4] }}"
+
+    - name: Record the PipeWire runtime path
+      ansible.builtin.set_fact:
         pipewire_runtime_dir: "/run/user/{{ pipewire_uid }}"
 
     - name: Look up the PipeWire owner's primary group
@@ -168,6 +172,37 @@
         - pipewire.socket
         - pipewire.service
         - wireplumber.service
+      become: true
+      become_user: "{{ pipewire_user }}"
+      environment:
+        HOME: "{{ pipewire_home }}"
+        XDG_RUNTIME_DIR: "{{ pipewire_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ pipewire_runtime_dir }}/bus"
+
+    - name: Read the PipeWire sink volume
+      ansible.builtin.command:
+        argv:
+          - wpctl
+          - get-volume
+          - "@DEFAULT_AUDIO_SINK@"
+      register: pipewire_sink_volume_current
+      changed_when: false
+      become: true
+      become_user: "{{ pipewire_user }}"
+      environment:
+        HOME: "{{ pipewire_home }}"
+        XDG_RUNTIME_DIR: "{{ pipewire_runtime_dir }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path={{ pipewire_runtime_dir }}/bus"
+
+    - name: Set the PipeWire sink volume
+      ansible.builtin.command:
+        argv:
+          - wpctl
+          - set-volume
+          - "@DEFAULT_AUDIO_SINK@"
+          - "{{ pipewire_sink_volume }}"
+      when: (pipewire_sink_volume_current.stdout.split()[1] | float) != (pipewire_sink_volume | float)
+      changed_when: true
       become: true
       become_user: "{{ pipewire_user }}"
       environment:
