@@ -11,7 +11,7 @@
     device_name: Ceiling Speakers
     cache_size_mb: null
     pipewire_device: null
-    initial_volume: null
+    initial_volume: 100
     websocket_address: null
     service_user: soloist
     service_group: "{{ service_user }}"
