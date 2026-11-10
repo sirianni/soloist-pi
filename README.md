@@ -71,9 +71,8 @@ sudo journalctl -u soloist.service -f
 Configuration validation, the updater, startup fallback, expiry retry policy,
 and Soloist process handling are covered by offline tests using RESPX mocks, a
 local HTTP server, and fake executables. The production service now starts the
-real supervisor; its first live CDN download and Soloist launch on the Debian
-13 arm64 Pi remain to be verified. See
-[`etc/deployment-plan.md`](etc/deployment-plan.md) for remaining work.
+real supervisor, and the live CDN download and Soloist launch have been verified
+on the Debian 13 arm64 Pi.
 
 The updater selects Spotify's Linux Soloist build for supported `arm64` and
 `x86_64` hosts and rejects unsupported platforms before making a request. The
